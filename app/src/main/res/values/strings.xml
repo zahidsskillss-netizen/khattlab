@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">KhattLab</string>
+
+    <!-- top bar -->
+    <string name="undo">بېرته</string>
+    <string name="redo">مخکې</string>
+    <string name="share">شریکول</string>
+    <string name="save">خوندي کول</string>
+
+    <!-- page tools -->
+    <string name="t_add_text">متن زیاتول</string>
+    <string name="t_photo">عکس</string>
+    <string name="t_bg_color">شالید رنګ</string>
+    <string name="t_canvas">اندازه پاڼه</string>
+    <string name="t_import_font">فونټ راوړل</string>
+    <string name="t_new">نوې پاڼه</string>
+    <string name="t_about">په اړه</string>
+
+    <!-- text tools -->
+    <string name="t_edit">سمول</string>
+    <string name="t_font">فونټ</string>
+    <string name="t_color">رنګ</string>
+    <string name="t_size">اندازه</string>
+    <string name="t_stroke">څنډه</string>
+    <string name="t_shadow">سیوری</string>
+    <string name="t_opacity">روڼوالی</string>
+    <string name="t_align">برابرول</string>
+    <string name="t_spacing">واټن</string>
+    <string name="t_highlight">شالید متن</string>
+    <string name="t_order">ترتیب</string>
+    <string name="t_copy">کاپي</string>
+    <string name="t_delete">ړنګول</string>
+    <string name="t_done">بشپړ</string>
+
+    <!-- panels -->
+    <string name="p_size">اندازه</string>
+    <string name="p_rotation">څرخول</string>
+    <string name="p_center">منځ ته</string>
+    <string name="p_reset_rotation">سیده کول</string>
+    <string name="p_width">پلنوالی</string>
+    <string name="p_blur">نرموالی</string>
+    <string name="p_offset_x">کیڼ/ښي</string>
+    <string name="p_offset_y">پورته/ښکته</string>
+    <string name="p_opacity">روڼوالی</string>
+    <string name="p_align_start">پیل</string>
+    <string name="p_align_center">منځ</string>
+    <string name="p_align_end">پای</string>
+    <string name="p_letter_spacing">د تورو واټن</string>
+    <string name="p_line_spacing">د کرښو واټن</string>
+    <string name="p_padding">څنډه</string>
+    <string name="p_bring_forward">مخ ته</string>
+    <string name="p_send_backward">شا ته</string>
+
+    <!-- fonts -->
+    <string name="font_default">معمول</string>
+    <string name="font_bold">درانه</string>
+    <string name="font_light">نری</string>
+    <string name="font_condensed">ټینګ</string>
+    <string name="font_serif">سرېف</string>
+    <string name="font_serif_bold">سرېف درانه</string>
+    <string name="font_mono">مونو</string>
+    <string name="font_sample">خط Aa</string>
+    <string name="font_add">+ فونټ</string>
+    <string name="font_added">فونټ زیات شو</string>
+
+    <!-- color picker -->
+    <string name="cp_title">رنګ وټاکئ</string>
+    <string name="cp_hue">رنګ</string>
+    <string name="cp_saturation">تېزوالی</string>
+    <string name="cp_brightness">روښانتیا</string>
+
+    <!-- dialogs -->
+    <string name="ok">ښه</string>
+    <string name="cancel">لغوه</string>
+    <string name="exit">وتل</string>
+    <string name="text_hint">خپل متن دلته ولیکئ…</string>
+    <string name="exit_confirm">ستاسو کار به خوندي نه شي. وځئ؟</string>
+    <string name="new_confirm">نوې خالي پاڼه پیل کړئ؟ (د بېرته تڼۍ سره یې بیا راګرځولای شئ)</string>
+    <string name="about_text">KhattLab — نسخه %1$s\n\nپر عکسونو د پښتو، دري، عربي او انګلیسي متن لیکلو او ډیزاین پروګرام.\n\nجوړونکی: Zahid Ullah Alokozay\nغوره ګرافیکس پرودکشن — Ghora Graphics\n\nټلګرام چینل: t.me/pashtoapp</string>
+
+    <!-- messages -->
+    <string name="loading">عکس راځي…</string>
+    <string name="saved">په ګالري کې خوندي شو (Pictures/KhattLab)</string>
+    <string name="err_save">خوندي نه شو، بیا هڅه وکړئ</string>
+    <string name="err_image">دا عکس خلاص نه شو</string>
+    <string name="err_font">دا فونټ ونه منل شو. یوازې ‎.ttf‎ یا ‎.otf‎ فایلونه</string>
+    <string name="err_no_app">د دې کار لپاره اپ ونه موندل شو</string>
+    <string name="err_permission">د خوندي کولو اجازه ورنه کړل شوه</string>
+</resources>
