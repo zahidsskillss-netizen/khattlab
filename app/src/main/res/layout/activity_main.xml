@@ -38,6 +38,12 @@
             android:text="↷" />
 
         <TextView
+            android:id="@+id/btn_grid"
+            style="@style/TopButton"
+            android:contentDescription="@string/grid"
+            android:text="#" />
+
+        <TextView
             android:id="@+id/btn_share"
             style="@style/TopButton"
             android:text="@string/share"
