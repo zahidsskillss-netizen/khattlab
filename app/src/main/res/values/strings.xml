@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">KhattLab</string>
+    <string name="app_name">NawakhtGar</string>
 
     <!-- top bar -->
     <string name="undo">بېرته</string>
@@ -77,11 +77,11 @@
     <string name="text_hint">خپل متن دلته ولیکئ…</string>
     <string name="exit_confirm">ستاسو کار به خوندي نه شي. وځئ؟</string>
     <string name="new_confirm">نوې خالي پاڼه پیل کړئ؟ (د بېرته تڼۍ سره یې بیا راګرځولای شئ)</string>
-    <string name="about_text">KhattLab — نسخه %1$s\n\nپر عکسونو د پښتو، دري، عربي او انګلیسي متن لیکلو او ډیزاین پروګرام.\n\nجوړونکی: Zahid Ullah Alokozay\nغوره ګرافیکس پرودکشن — Ghora Graphics\n\nټلګرام چینل: t.me/pashtoapp</string>
+    <string name="about_text">NawakhtGar — نسخه %1$s\n\nپر عکسونو د پښتو، دري، عربي او انګلیسي متن لیکلو او ډیزاین پروګرام.\n\nجوړونکی: Zahid Ullah Alokozay\nغوره ګرافیکس پرودکشن — Ghora Graphics\n\nټلګرام چینل: t.me/pashtoapp</string>
 
     <!-- messages -->
     <string name="loading">عکس راځي…</string>
-    <string name="saved">په ګالري کې خوندي شو (Pictures/KhattLab)</string>
+    <string name="saved">په ګالري کې خوندي شو (Pictures/NawakhtGar)</string>
     <string name="err_save">خوندي نه شو، بیا هڅه وکړئ</string>
     <string name="err_image">دا عکس خلاص نه شو</string>
     <string name="err_font">دا فونټ ونه منل شو. یوازې ‎.ttf‎ یا ‎.otf‎ فایلونه</string>
@@ -152,4 +152,35 @@
     <string name="t_texture">بافت</string>
     <string name="t_to_back">شا ته</string>
     <string name="t_to_front">مخ ته</string>
+    <!-- projects -->
+    <string name="t_projects">پروژې</string>
+    <string name="project">پروژه</string>
+    <string name="project_saved">پروژه خوندي شوه</string>
+    <string name="project_opening">پروژه خلاصېږي…</string>
+    <string name="project_save_now">💾 پروژه ساتل</string>
+    <string name="project_empty">پاڼه لا خالي ده</string>
+    <string name="project_none">لا پروژه نشته. چې کار پیل کړئ، پخپله خوندي کیږي.</string>
+    <string name="project_hint">پر پروژه کېکاږئ چې خلاصه شي؛ اوږد یې ونیسئ: نوم بدلول، کاپي، ړنګول</string>
+    <string name="project_open">خلاصول</string>
+    <string name="project_rename">نوم بدلول</string>
+    <string name="project_delete">دا پروژه ړنګه کړئ؟ بېرته نه راځي.</string>
+    <string name="err_project">پروژه خلاصه/خوندي نه شوه</string>
+
+    <!-- 3D -->
+    <string name="p_enabled">فعال</string>
+    <string name="p_on">روښانه</string>
+    <string name="p_off">بند</string>
+    <string name="p_view_type">د لید ډول</string>
+    <string name="p_perspective">پرسپکټیو</string>
+    <string name="p_oblique">مایل (oblique)</string>
+    <string name="p_direction">لوری</string>
+    <string name="p_depth_color">د ژوروالي رنګ</string>
+    <string name="p_color_one">رنګ</string>
+    <string name="p_auto">اتومات</string>
+    <string name="p_near_color">نږدې رنګ</string>
+    <string name="p_far_color">لرې رنګ</string>
+    <string name="p_darken">تیاره کول</string>
+    <string name="p_rot_z">Z محور</string>
+    <string name="p_light">د رڼا شبیه‌سازي</string>
+    <string name="p_light_angle">د رڼا زاویه</string>
 </resources>

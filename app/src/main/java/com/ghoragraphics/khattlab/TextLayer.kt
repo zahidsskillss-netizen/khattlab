@@ -74,6 +74,14 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
     var depth = 0f                  // 3D text
     var depthAngle = 45f
     var depthColor = 0xFF5A5A5A.toInt()
+    var d3On = true                 // 3D switched on (keeps values when off)
+    var d3Persp = false             // false = oblique (parallel), true = perspective
+    var depthMode = 1               // 0 color, 1 auto (from text color), 2 gradient
+    var depthColor2 = 0xFF1A1A1A.toInt()
+    var depthDarken = 30f           // 0..100, how much darker the far end is
+    var lightOn = false
+    var lightAngle = 72f            // where the light comes from, degrees
+    var lightStrength = 50f         // 0..100
 
     var floorLength = 0f            // 3D shadow, 0..100
     var floorSkew = 40f             // -100..100
@@ -84,6 +92,7 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
     private val paint = TextPaint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG)
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val layerPaint = Paint()
+    private val lightPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var staticLayout: StaticLayout? = null
     private val curvePath = Path()
     private var curveText = ""
@@ -109,6 +118,8 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
         innerRadius = o.innerRadius; innerDx = o.innerDx; innerDy = o.innerDy; innerColor = o.innerColor
         emboss = o.emboss
         depth = o.depth; depthAngle = o.depthAngle; depthColor = o.depthColor
+        d3On = o.d3On; d3Persp = o.d3Persp; depthMode = o.depthMode; depthColor2 = o.depthColor2; depthDarken = o.depthDarken
+        lightOn = o.lightOn; lightAngle = o.lightAngle; lightStrength = o.lightStrength
         floorLength = o.floorLength; floorSkew = o.floorSkew; floorBlur = o.floorBlur; floorColor = o.floorColor
         opacity = o.opacity
         perspH = o.perspH; perspV = o.perspV; rotX = o.rotX; rotY = o.rotY
@@ -153,6 +164,9 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
         put("innerRadius", innerRadius.toDouble()); put("innerDx", innerDx.toDouble()); put("innerDy", innerDy.toDouble()); put("innerColor", innerColor)
         put("emboss", emboss.toDouble())
         put("depth", depth.toDouble()); put("depthAngle", depthAngle.toDouble()); put("depthColor", depthColor)
+        put("d3On", d3On); put("d3Persp", d3Persp); put("depthMode", depthMode); put("depthColor2", depthColor2)
+        put("depthDarken", depthDarken.toDouble()); put("lightOn", lightOn); put("lightAngle", lightAngle.toDouble())
+        put("lightStrength", lightStrength.toDouble())
         put("floorLength", floorLength.toDouble()); put("floorSkew", floorSkew.toDouble()); put("floorBlur", floorBlur.toDouble()); put("floorColor", floorColor)
         put("opacity", opacity)
         put("perspH", perspH.toDouble()); put("perspV", perspV.toDouble()); put("rotX", rotX.toDouble()); put("rotY", rotY.toDouble())
@@ -175,11 +189,38 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
         innerRadius = f("innerRadius", 0f); innerDx = f("innerDx", 0f); innerDy = f("innerDy", 0f); innerColor = j.optInt("innerColor", innerColor)
         emboss = f("emboss", 0f)
         depth = f("depth", 0f); depthAngle = f("depthAngle", 45f); depthColor = j.optInt("depthColor", depthColor)
+        d3On = j.optBoolean("d3On", true); d3Persp = j.optBoolean("d3Persp", false)
+        // styles saved before depth modes existed used the chosen depth color
+        depthMode = j.optInt("depthMode", if (j.has("depthColor")) 0 else 1)
+        depthColor2 = j.optInt("depthColor2", depthColor2); depthDarken = f("depthDarken", 30f)
+        lightOn = j.optBoolean("lightOn", false); lightAngle = f("lightAngle", 72f); lightStrength = f("lightStrength", 50f)
         floorLength = f("floorLength", 0f); floorSkew = f("floorSkew", 40f); floorBlur = f("floorBlur", 6f); floorColor = j.optInt("floorColor", floorColor)
         opacity = j.optInt("opacity", 255)
         perspH = f("perspH", 0f); perspV = f("perspV", 0f); rotX = f("rotX", 0f); rotY = f("rotY", 0f)
         reflectSize = f("reflectSize", 0f); reflectGap = f("reflectGap", 0f); reflectAlpha = j.optInt("reflectAlpha", 130)
         if (textSize > 0f) rescale(keepSize / textSize)
+    }
+
+    // ---- projects ----
+
+    /** Everything about this text, for saving a project (the texture picture is saved separately). */
+    fun toJson(): JSONObject = styleToJson().apply {
+        put("type", "text"); put("text", text)
+        put("fillMode", fillMode)
+        putBase(this)
+    }
+
+    companion object {
+        fun fromJson(j: JSONObject, texture: android.graphics.Bitmap?): TextLayer {
+            val l = TextLayer(j.optString("text", ""), 0f, 0f)
+            l.textSize = j.optDouble("textSize", 90.0).toFloat()
+            l.applyStyleJson(j)
+            l.fillMode = j.optInt("fillMode", 0)
+            l.texture = texture
+            if (l.fillMode == 2 && texture == null) l.fillMode = 0
+            l.readBase(j)
+            return l
+        }
     }
 
     // ---- measuring ----
@@ -297,6 +338,26 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
         (Color.blue(a) + (Color.blue(b) - Color.blue(a)) * t).toInt()
     )
 
+    /** Main color of the text face, used for the "auto" depth color. */
+    private fun frontColor(): Int = when (fillMode) {
+        1 -> lerpColor(gradColor1, gradColor2, 0.5f)
+        2 -> 0xFF808080.toInt()
+        else -> if (Color.alpha(color) < 40) (if (strokeWidth > 0f) strokeColor else Color.GRAY) else color
+    }
+
+    /** -1..1: how much the sides of the 3D text face the light. */
+    private fun sideLight(): Float {
+        if (!lightOn || lightStrength <= 0f) return 0f
+        val diff = Math.toRadians((lightAngle - depthAngle).toDouble())
+        return cos(diff).toFloat() * lightStrength / 100f
+    }
+
+    private fun shade(c: Int, k: Float): Int = when {
+        k > 0f -> lerpColor(c, Color.WHITE, 0.45f * k)
+        k < 0f -> lerpColor(c, Color.BLACK, 0.55f * -k)
+        else -> c
+    }
+
     override fun drawLocal(canvas: Canvas, fm: FontManager) {
         prepare(fm)
 
@@ -314,17 +375,32 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
         }
 
         // 3D text (extrusion)
-        if (depth > 0.5f) {
+        if (d3On && depth > 0.5f) {
             val a = Math.toRadians(depthAngle.toDouble())
             val dx = cos(a).toFloat()
             val dy = sin(a).toFloat()
-            val steps = depth.toInt().coerceIn(1, 60)
+            val steps = depth.toInt().coerceIn(1, 90)
             val stepLen = depth / steps
+            // perspective: the far end gets smaller, as if going away to a point
+            val shrink = if (d3Persp) (depth / max(max(cW, cH), 1f) * 1.2f).coerceIn(0f, 0.6f) else 0f
+            val base = when (depthMode) {
+                1 -> lerpColor(frontColor(), Color.BLACK, 0.25f)
+                else -> depthColor
+            }
+            val side = sideLight()
             for (i in steps downTo 1) {
+                val t = i / steps.toFloat()
                 val d = i * stepLen
                 canvas.save()
                 canvas.translate(dx * d, dy * d)
-                pass(lerpColor(depthColor, Color.BLACK, 0.35f * i / steps), if (strokeWidth > 0f) Paint.Style.FILL_AND_STROKE else Paint.Style.FILL)
+                if (shrink > 0f) {
+                    val k = 1f - shrink * t
+                    canvas.scale(k, k, cW / 2f, cH / 2f)
+                }
+                var c = if (depthMode == 2) lerpColor(depthColor, depthColor2, t) else base
+                c = lerpColor(c, Color.BLACK, depthDarken / 100f * t)
+                c = shade(c, side)
+                pass(c, if (strokeWidth > 0f) Paint.Style.FILL_AND_STROKE else Paint.Style.FILL)
                 paint.strokeWidth = strokeWidth
                 paint.strokeJoin = Paint.Join.ROUND
                 drawContent(canvas)
@@ -353,16 +429,40 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
             drawContent(canvas)
         }
 
-        // fill (+ emboss, + inner shadow)
+        // fill (+ emboss, + inner shadow, + light)
         val innerOn = innerRadius > 0f || innerDx != 0f || innerDy != 0f
-        val sc = if (innerOn) canvas.saveLayer(null, null) else -1
+        val lightFront = d3On && lightOn && lightStrength > 0f
+        val layered = innerOn || lightFront
+        if (wantShadow && strokeWidth <= 0f && layered) {
+            // the shadow is drawn under the separate layer, which then covers the text copy
+            configureFill()
+            paint.setShadowLayer(shadowR, shadowDx, shadowDy, shadowColor)
+            drawContent(canvas)
+        }
+        val sc = if (layered) canvas.saveLayer(null, null) else -1
         configureFill()
-        if (wantShadow && strokeWidth <= 0f && !innerOn) paint.setShadowLayer(shadowR, shadowDx, shadowDy, shadowColor)
+        if (wantShadow && strokeWidth <= 0f && !layered) paint.setShadowLayer(shadowR, shadowDx, shadowDy, shadowColor)
         if (emboss > 0f) {
             @Suppress("DEPRECATION")
             paint.maskFilter = EmbossMaskFilter(floatArrayOf(-1f, -1f, 1f), 0.45f, 10f, max(1f, textSize * 0.03f * emboss / 50f))
         }
         drawContent(canvas)
+
+        if (lightFront) {
+            // light side brighter, the other side darker
+            val a = Math.toRadians(lightAngle.toDouble())
+            val hx = cos(a).toFloat() * cW / 2f
+            val hy = sin(a).toFloat() * cH / 2f
+            val k = lightStrength / 100f
+            lightPaint.shader = LinearGradient(
+                cW / 2f + hx, cH / 2f + hy, cW / 2f - hx, cH / 2f - hy,
+                Color.argb((150 * k).toInt(), 255, 255, 255), Color.argb((140 * k).toInt(), 0, 0, 0),
+                Shader.TileMode.CLAMP
+            )
+            lightPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_ATOP)
+            val pad = strokeWidth + 8f
+            canvas.drawRect(-pad, -pad, cW + pad, cH + pad, lightPaint)
+        }
 
         if (innerOn) {
             layerPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_ATOP)
@@ -376,8 +476,8 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
             drawContent(canvas)
             canvas.restore()
             canvas.restoreToCount(sc2)
-            canvas.restoreToCount(sc)
         }
+        if (sc >= 0) canvas.restoreToCount(sc)
         pass(color)
     }
 }

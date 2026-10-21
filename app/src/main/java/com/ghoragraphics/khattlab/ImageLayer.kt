@@ -53,6 +53,29 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
         return c
     }
 
+    /** Settings of this picture for a project; the picture itself is saved as a file. */
+    fun toJson(file: String): org.json.JSONObject = org.json.JSONObject().apply {
+        put("type", "image"); put("file", file)
+        put("flipH", flipH); put("flipV", flipV); put("round", round.toDouble())
+        put("borderWidth", borderWidth.toDouble()); put("borderColor", borderColor)
+        put("shadowRadius", shadowRadius.toDouble()); put("shadowDx", shadowDx.toDouble()); put("shadowDy", shadowDy.toDouble())
+        put("shadowColor", shadowColor)
+        putBase(this)
+    }
+
+    companion object {
+        fun fromJson(j: org.json.JSONObject, b: Bitmap): ImageLayer {
+            val l = ImageLayer(b, 0f, 0f)
+            fun f(k: String, d: Float) = j.optDouble(k, d.toDouble()).toFloat()
+            l.flipH = j.optBoolean("flipH"); l.flipV = j.optBoolean("flipV"); l.round = f("round", 0f)
+            l.borderWidth = f("borderWidth", 0f); l.borderColor = j.optInt("borderColor", Color.WHITE)
+            l.shadowRadius = f("shadowRadius", 0f); l.shadowDx = f("shadowDx", 0f); l.shadowDy = f("shadowDy", 0f)
+            l.shadowColor = j.optInt("shadowColor", 0x99000000.toInt())
+            l.readBase(j)
+            return l
+        }
+    }
+
     override fun rescale(k: Float) {
         super.rescale(k)
         scale *= k

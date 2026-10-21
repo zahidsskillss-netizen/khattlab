@@ -14,7 +14,7 @@ import java.io.FileNotFoundException
 class ShareProvider : ContentProvider() {
 
     companion object {
-        const val AUTHORITY = "com.ghoragraphics.khattlab.share"
+        const val AUTHORITY = "com.ghoragraphics.nawakhtgar.share"
     }
 
     private fun fileFor(uri: Uri): File {

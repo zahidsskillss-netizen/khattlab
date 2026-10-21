@@ -8,15 +8,29 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.ghoragraphics.khattlab"
+        applicationId = "com.ghoragraphics.nawakhtgar"
         minSdk = 24
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "2.0"
+    }
+
+    // One fixed key, so every new APK installs over the old one (projects are kept)
+    signingConfigs {
+        create("shared") {
+            storeFile = file("nawakhtgar.keystore")
+            storePassword = "nawakhtgar"
+            keyAlias = "nawakhtgar"
+            keyPassword = "nawakhtgar"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("shared")
+        }
         release {
+            signingConfig = signingConfigs.getByName("shared")
             isMinifyEnabled = false
         }
     }

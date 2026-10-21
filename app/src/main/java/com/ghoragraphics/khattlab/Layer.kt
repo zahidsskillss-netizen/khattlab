@@ -66,6 +66,22 @@ abstract class Layer {
         reflectSize = o.reflectSize; reflectGap = o.reflectGap; reflectAlpha = o.reflectAlpha
     }
 
+    /** Place, size and shared effects, for saving a project. */
+    fun putBase(j: org.json.JSONObject) {
+        j.put("x", x.toDouble()); j.put("y", y.toDouble()); j.put("rotation", rotation.toDouble()); j.put("scale", scale.toDouble())
+        j.put("opacity", opacity)
+        j.put("perspH", perspH.toDouble()); j.put("perspV", perspV.toDouble()); j.put("rotX", rotX.toDouble()); j.put("rotY", rotY.toDouble())
+        j.put("reflectSize", reflectSize.toDouble()); j.put("reflectGap", reflectGap.toDouble()); j.put("reflectAlpha", reflectAlpha)
+    }
+
+    fun readBase(j: org.json.JSONObject) {
+        fun f(k: String, d: Float) = j.optDouble(k, d.toDouble()).toFloat()
+        x = f("x", 0f); y = f("y", 0f); rotation = f("rotation", 0f); scale = f("scale", 1f)
+        opacity = j.optInt("opacity", 255)
+        perspH = f("perspH", 0f); perspV = f("perspV", 0f); rotX = f("rotX", 0f); rotY = f("rotY", 0f)
+        reflectSize = f("reflectSize", 0f); reflectGap = f("reflectGap", 0f); reflectAlpha = j.optInt("reflectAlpha", 130)
+    }
+
     private fun buildMatrix(out: Matrix) {
         out.reset()
         out.setTranslate(-cW / 2f, -cH / 2f)

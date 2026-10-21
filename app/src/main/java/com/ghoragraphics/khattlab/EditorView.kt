@@ -296,6 +296,35 @@ class EditorView @JvmOverloads constructor(
         invalidate()
     }
 
+    /** True when the page has nothing on it yet. */
+    fun isBlank() = layers.isEmpty() && doc.bitmap == null
+
+    /** Puts an opened project on the page. Undo history starts fresh. */
+    fun loadDoc(d: DocBackground, list: List<Layer>) {
+        undoStack.clear()
+        redoStack.clear()
+        layers.clear()
+        layers.addAll(list)
+        doc = d
+        selected = null
+        listener?.onSelectionChanged(null)
+        listener?.onHistoryChanged()
+        invalidate()
+    }
+
+    /** A small picture of the page (longest side = [side]) for the projects list. */
+    fun renderThumb(side: Int): Bitmap {
+        val k = side / max(doc.width, doc.height).toFloat()
+        val w = (doc.width * k).roundToInt().coerceAtLeast(1)
+        val h = (doc.height * k).roundToInt().coerceAtLeast(1)
+        val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val c = Canvas(b)
+        c.drawColor(Color.WHITE)
+        c.scale(k, k)
+        drawDoc(c)
+        return b
+    }
+
     /** Draws the finished picture at full size, without the selection box. */
     fun render(): Bitmap {
         val b = Bitmap.createBitmap(doc.width, doc.height, Bitmap.Config.ARGB_8888)

@@ -70,14 +70,14 @@ object ImageIO {
         }
     }
 
-    /** Saves to Pictures/KhattLab so it shows in the phone's gallery. */
+    /** Saves to Pictures/NawakhtGar so it shows in the phone's gallery. */
     fun saveToGallery(ctx: Context, bmp: Bitmap, name: String): Boolean {
         return try {
             if (Build.VERSION.SDK_INT >= 29) {
                 val values = ContentValues().apply {
                     put(MediaStore.Images.Media.DISPLAY_NAME, name)
                     put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/KhattLab")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/NawakhtGar")
                     put(MediaStore.Images.Media.IS_PENDING, 1)
                 }
                 val cr = ctx.contentResolver
@@ -89,7 +89,7 @@ object ImageIO {
                 ok
             } else {
                 @Suppress("DEPRECATION")
-                val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "KhattLab")
+                val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "NawakhtGar")
                 dir.mkdirs()
                 val f = File(dir, name)
                 val ok = FileOutputStream(f).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
@@ -107,7 +107,7 @@ object ImageIO {
             val dir = File(ctx.cacheDir, "share")
             dir.mkdirs()
             dir.listFiles()?.forEach { it.delete() }
-            val name = "KhattLab_${System.currentTimeMillis()}.png"
+            val name = "NawakhtGar_${System.currentTimeMillis()}.png"
             val f = File(dir, name)
             FileOutputStream(f).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
             Uri.parse("content://${ShareProvider.AUTHORITY}/$name")

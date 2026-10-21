@@ -26,6 +26,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
+import android.widget.ScrollView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
@@ -55,7 +56,7 @@ class MainActivity : Activity(), EditorView.Listener {
             0xFF607D8B.toInt(), 0xFF263238.toInt(), 0xFF1B5E20.toInt(), 0xFF0D47A1.toInt()
         )
 
-        private val MAIN_PANELS = setOf("bgcolor", "canvas")
+        private val MAIN_PANELS = setOf("bgcolor", "canvas", "projects")
         private val COMMON_PANELS = setOf("position", "relpos", "size", "opacity", "rotate", "persp", "rot3d", "reflect")
         private val TEXT_PANELS = COMMON_PANELS + setOf(
             "styles", "font", "style", "color", "texture", "curve", "background", "align", "spacing",
@@ -73,6 +74,13 @@ class MainActivity : Activity(), EditorView.Listener {
     private lateinit var btnGrid: TextView
 
     private var activeTool: String? = null
+    private var panelScroll: ScrollView? = null
+
+    // ---- projects ----
+    private lateinit var projects: ProjectStore
+    private var currentId: String? = null
+    private var currentName = ""
+    private var dirty = false
     private val gold = 0xFFE8B547.toInt()
     private val textMain = 0xFFF2F2F5.toInt()
     private val textDim = 0xFFA8A8B3.toInt()
@@ -88,6 +96,7 @@ class MainActivity : Activity(), EditorView.Listener {
         setContentView(R.layout.activity_main)
 
         fonts = FontManager(this)
+        projects = ProjectStore(this)
         editor = findViewById(R.id.editor)
         editor.fonts = fonts
         editor.listener = this
@@ -112,12 +121,18 @@ class MainActivity : Activity(), EditorView.Listener {
         handleIncoming(intent)
     }
 
-    /** A photo shared into KhattLab from the gallery or another app. */
+    /** A photo shared into NawakhtGar from the gallery or another app. */
     private fun handleIncoming(i: Intent?) {
         if (i?.action != Intent.ACTION_SEND) return
         @Suppress("DEPRECATION")
         val uri: Uri? = i.getParcelableExtra(Intent.EXTRA_STREAM)
         if (uri != null) loadBitmapThen(uri, 2560) { editor.setPhoto(it) }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // never lose work: whatever is on the page is kept as a project
+        if (dirty && !editor.isBlank()) saveProject(true)
     }
 
     @Deprecated("Deprecated in Java")
@@ -126,11 +141,8 @@ class MainActivity : Activity(), EditorView.Listener {
             activeTool != null -> closePanel()
             editor.selected != null -> editor.select(null)
             editor.layers.isNotEmpty() || editor.doc.bitmap != null -> {
-                AlertDialog.Builder(this)
-                    .setMessage(R.string.exit_confirm)
-                    .setPositiveButton(R.string.exit) { _, _ -> finish() }
-                    .setNegativeButton(R.string.cancel, null)
-                    .show()
+                // the work is kept in the projects, so leaving is safe
+                saveProject(true) { finish() }
             }
             else -> {
                 @Suppress("DEPRECATION")
@@ -162,6 +174,7 @@ class MainActivity : Activity(), EditorView.Listener {
     }
 
     override fun onHistoryChanged() {
+        dirty = true
         btnUndo.alpha = if (editor.canUndo()) 1f else 0.35f
         btnRedo.alpha = if (editor.canRedo()) 1f else 0.35f
     }
@@ -288,6 +301,7 @@ class MainActivity : Activity(), EditorView.Listener {
                 toolButton("done", "✓", R.string.t_done) { editor.select(null) }
             )
             else -> listOf(
+                panelTool("projects", "▦", R.string.t_projects),
                 toolButton("add", "T+", R.string.t_add_text) { promptText(null) },
                 toolButton("addimg", "▣+", R.string.t_add_image) { pick(REQ_ADD_IMAGE) },
                 toolButton("photo", "▣", R.string.t_photo) { pick(REQ_BG_IMAGE) },
@@ -323,8 +337,10 @@ class MainActivity : Activity(), EditorView.Listener {
     }
 
     private fun openPanel(key: String) {
+        val keepScroll = if (activeTool == key) panelScroll?.scrollY ?: 0 else 0
         activeTool = key
         panelHost.removeAllViews()
+        panelScroll = null
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(8), dp(14), dp(8))
@@ -347,6 +363,8 @@ class MainActivity : Activity(), EditorView.Listener {
                     editor.setDocSize(p.first, p.second)
                 })
             }
+
+            "projects" -> buildProjectsPanel(box)
 
             // ---------- any layer ----------
             "position" -> if (s != null) {
@@ -584,18 +602,76 @@ class MainActivity : Activity(), EditorView.Listener {
             }
 
             "depth" -> if (t != null) {
-                box.addView(slider(R.string.p_depth, 0, 150, t.depth.roundToInt(), { "$it" }) { v ->
-                    ut(false) { it.depth = v.toFloat() }
-                })
-                box.addView(slider(R.string.p_angle, 0, 359, t.depthAngle.roundToInt(), { "$it°" }) { v ->
-                    ut(false) { it.depthAngle = v.toFloat() }
-                })
-                box.addView(swatchRow(t.depthColor, false) { c ->
+                box.addView(label(R.string.p_enabled))
+                box.addView(onOff(t.d3On) { on ->
                     ut {
-                        it.depthColor = c
+                        it.d3On = on
+                        if (on && it.depth <= 0f) it.depth = (it.textSize * 0.15f).coerceAtLeast(4f)
+                    }
+                    openPanel("depth")
+                })
+                box.addView(label(R.string.p_view_type))
+                box.addView(chipRow(listOf(getString(R.string.p_perspective), getString(R.string.p_oblique)), if (t.d3Persp) 0 else 1) { i ->
+                    ut {
+                        it.d3Persp = i == 0
                         if (it.depth <= 0f) it.depth = (it.textSize * 0.15f).coerceAtLeast(4f)
                     }
                     openPanel("depth")
+                })
+
+                box.addView(header(R.string.p_depth))
+                box.addView(slider(R.string.p_depth, 0, 200, t.depth.roundToInt(), { "$it" }) { v ->
+                    ut(false) { it.depth = v.toFloat(); if (v > 0) it.d3On = true }
+                })
+                box.addView(slider(R.string.p_direction, 0, 359, t.depthAngle.roundToInt(), { "$it°" }) { v ->
+                    ut(false) { it.depthAngle = v.toFloat() }
+                })
+                box.addView(label(R.string.p_depth_color))
+                box.addView(chipRow(listOf(getString(R.string.p_color_one), getString(R.string.p_auto), getString(R.string.p_gradient)), t.depthMode) { i ->
+                    ut {
+                        it.depthMode = i
+                        if (it.depth <= 0f) it.depth = (it.textSize * 0.15f).coerceAtLeast(4f)
+                    }
+                    openPanel("depth")
+                })
+                when (t.depthMode) {
+                    0 -> box.addView(swatchRow(t.depthColor, false) { c -> ut { it.depthColor = c } })
+                    2 -> {
+                        box.addView(label(R.string.p_near_color))
+                        box.addView(swatchRow(t.depthColor, false) { c -> ut { it.depthColor = c } })
+                        box.addView(label(R.string.p_far_color))
+                        box.addView(swatchRow(t.depthColor2, false) { c -> ut { it.depthColor2 = c } })
+                    }
+                }
+                box.addView(slider(R.string.p_darken, 0, 100, t.depthDarken.roundToInt(), { "$it%" }) { v ->
+                    ut(false) { it.depthDarken = v.toFloat() }
+                })
+
+                box.addView(header(R.string.t_rotate3d))
+                box.addView(slider(R.string.p_rot_x, -80, 80, t.rotX.roundToInt(), { "$it°" }) { v ->
+                    ut(false) { it.rotX = v.toFloat() }
+                })
+                box.addView(slider(R.string.p_rot_y, -80, 80, t.rotY.roundToInt(), { "$it°" }) { v ->
+                    ut(false) { it.rotY = v.toFloat() }
+                })
+                box.addView(slider(R.string.p_rot_z, -180, 180, t.rotation.roundToInt(), { "$it°" }) { v ->
+                    ut(false) { it.rotation = v.toFloat() }
+                })
+
+                box.addView(header(R.string.p_light))
+                box.addView(onOff(t.lightOn) { on -> ut { it.lightOn = on; if (on) it.d3On = true }; openPanel("depth") })
+                box.addView(slider(R.string.p_light_angle, 0, 359, t.lightAngle.roundToInt(), { "$it°" }) { v ->
+                    ut(false) { it.lightAngle = v.toFloat() }
+                })
+                box.addView(slider(R.string.p_strength, 0, 100, t.lightStrength.roundToInt(), { "$it%" }) { v ->
+                    ut(false) { it.lightStrength = v.toFloat() }
+                })
+                box.addView(resetChip { l ->
+                    if (l is TextLayer) {
+                        l.depth = 0f; l.depthAngle = 45f; l.d3Persp = false; l.depthMode = 1; l.depthDarken = 30f
+                        l.lightOn = false; l.lightAngle = 72f; l.lightStrength = 50f
+                        l.rotX = 0f; l.rotY = 0f
+                    }
                 })
             }
 
@@ -667,10 +743,29 @@ class MainActivity : Activity(), EditorView.Listener {
             }
         }
 
-        panelHost.addView(box)
+        if (box.childCount > 6) {
+            // long panels scroll, so the page stays visible
+            val sv = ScrollView(this).apply { isVerticalScrollBarEnabled = true }
+            sv.addView(box)
+            panelHost.addView(sv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(290)))
+            panelScroll = sv
+            if (keepScroll > 0) sv.post { sv.scrollTo(0, keepScroll) }
+        } else {
+            panelHost.addView(box)
+        }
         panelHost.visibility = View.VISIBLE
         refreshTools()
     }
+
+    private fun header(res: Int): View = TextView(this).apply {
+        setText(res)
+        setTextColor(gold)
+        textSize = 14f
+        setPadding(0, dp(10), 0, dp(2))
+    }
+
+    private fun onOff(on: Boolean, onPick: (Boolean) -> Unit): View =
+        chipRow(listOf(getString(R.string.p_on), getString(R.string.p_off)), if (on) 0 else 1) { i -> onPick(i == 0) }
 
     private fun resetChip(block: (Layer) -> Unit): View =
         chipRow(listOf(getString(R.string.p_reset))) { _ ->
@@ -697,7 +792,8 @@ class MainActivity : Activity(), EditorView.Listener {
         { it.color = Color.WHITE },
         { it.color = 0xFFE8B547.toInt(); it.strokeWidth = it.textSize * 0.07f; it.strokeColor = Color.BLACK },
         { it.color = Color.WHITE; it.shadowColor = 0xFF00E5FF.toInt(); it.shadowRadius = it.textSize * 0.35f },
-        { it.color = 0xFFFFD54F.toInt(); it.depth = it.textSize * 0.18f; it.depthColor = 0xFFB26A00.toInt(); it.depthAngle = 50f },
+        { it.color = 0xFFFFD54F.toInt(); it.depth = it.textSize * 0.18f; it.depthMode = 0; it.depthColor = 0xFFB26A00.toInt(); it.depthAngle = 50f },
+        { it.color = Color.WHITE; it.depth = it.textSize * 0.3f; it.d3Persp = true; it.depthMode = 2; it.depthColor = 0xFF0D47A1.toInt(); it.depthColor2 = 0xFF000000.toInt(); it.depthAngle = 90f; it.lightOn = true; it.lightAngle = 250f },
         { it.color = Color.TRANSPARENT; it.strokeWidth = it.textSize * 0.05f; it.strokeColor = Color.WHITE },
         { it.fillMode = 1; it.gradColor1 = 0xFFFFEB3B.toInt(); it.gradColor2 = 0xFFF44336.toInt(); it.gradAngle = 90f },
         { it.color = Color.WHITE; it.highlightColor = 0xFFC62828.toInt(); it.highlightPadding = it.textSize * 0.3f },
@@ -1012,7 +1108,7 @@ class MainActivity : Activity(), EditorView.Listener {
     private fun confirmNew() {
         AlertDialog.Builder(this)
             .setMessage(R.string.new_confirm)
-            .setPositiveButton(R.string.ok) { _, _ -> editor.newDoc() }
+            .setPositiveButton(R.string.ok) { _, _ -> startNewDoc() }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
@@ -1036,6 +1132,164 @@ class MainActivity : Activity(), EditorView.Listener {
             .setTitle(R.string.app_name)
             .setView(tv)
             .setPositiveButton(R.string.ok, null)
+            .show()
+    }
+
+    // ================= projects =================
+
+    private fun defaultName(): String =
+        getString(R.string.project) + " " + SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date())
+
+    /** Saves the page as the current project (a new one if needed), then runs [then]. */
+    private fun saveProject(silent: Boolean, then: (() -> Unit)? = null) {
+        if (editor.isBlank()) {
+            then?.invoke()
+            return
+        }
+        val id = currentId ?: projects.newId().also { currentId = it }
+        if (currentName.isEmpty()) currentName = defaultName()
+        val thumb = try { editor.renderThumb(dp(140)) } catch (e: OutOfMemoryError) { null }
+        val snap = projects.snapshot(id, currentName, editor.doc, editor.layers.toList(), thumb)
+        dirty = false
+        Thread {
+            val ok = projects.write(id, snap)
+            runOnUiThread {
+                if (!silent) toast(if (ok) R.string.project_saved else R.string.err_project)
+                if (!ok) dirty = true
+                if (activeTool == "projects") openPanel("projects")
+                then?.invoke()
+            }
+        }.start()
+    }
+
+    private fun startNewDoc() {
+        saveProject(true) {
+            editor.newDoc()
+            currentId = null
+            currentName = ""
+            dirty = false
+        }
+    }
+
+    private fun openProject(info: ProjectStore.Info) {
+        if (info.id == currentId) {
+            closePanel()
+            return
+        }
+        val go = {
+            toast(R.string.project_opening)
+            Thread {
+                val p = projects.load(info.id)
+                runOnUiThread {
+                    if (p == null) {
+                        toast(R.string.err_project)
+                    } else {
+                        editor.loadDoc(p.doc, p.layers)
+                        currentId = info.id
+                        currentName = p.name.ifEmpty { defaultName() }
+                        dirty = false
+                        closePanel()
+                    }
+                }
+            }.start()
+        }
+        if (dirty && !editor.isBlank()) saveProject(true) { go() } else go()
+    }
+
+    private fun buildProjectsPanel(box: LinearLayout) {
+        box.addView(chipRow(listOf(getString(R.string.project_save_now), getString(R.string.t_new))) { i ->
+            if (i == 0) {
+                if (editor.isBlank()) toast(R.string.project_empty) else saveProject(false)
+            } else {
+                confirmNew()
+            }
+        })
+        val list = projects.list()
+        if (list.isEmpty()) {
+            box.addView(label(R.string.project_none))
+            return
+        }
+        val (scroll, row) = horizontalRow()
+        for (info in list) {
+            val on = info.id == currentId
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(6), dp(6), dp(6), dp(6))
+                background = pill(if (on) 0xFF3A3220.toInt() else chipBg, if (on) gold else 0x33FFFFFF)
+                setOnClickListener { openProject(info) }
+                setOnLongClickListener { projectMenu(info); true }
+            }
+            item.addView(ImageView(this).apply {
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                projects.thumbnail(info)?.let { setImageBitmap(it) }
+            }, LinearLayout.LayoutParams(dp(84), dp(84)))
+            item.addView(TextView(this).apply {
+                text = info.name
+                textSize = 10f
+                maxLines = 1
+                gravity = Gravity.CENTER
+                setTextColor(if (on) gold else textDim)
+            }, LinearLayout.LayoutParams(dp(90), ViewGroup.LayoutParams.WRAP_CONTENT))
+            val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(dp(4), 0, dp(4), 0)
+            row.addView(item, lp)
+        }
+        box.addView(scroll)
+        box.addView(label(R.string.project_hint))
+    }
+
+    private fun projectMenu(info: ProjectStore.Info) {
+        val items = arrayOf(getString(R.string.project_open), getString(R.string.project_rename), getString(R.string.t_copy), getString(R.string.t_delete))
+        AlertDialog.Builder(this)
+            .setTitle(info.name)
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> openProject(info)
+                    1 -> renameProject(info)
+                    2 -> {
+                        if (info.id == currentId && dirty) saveProject(true) { projects.duplicate(info.id); openPanel("projects") }
+                        else { projects.duplicate(info.id); openPanel("projects") }
+                    }
+                    3 -> AlertDialog.Builder(this)
+                        .setMessage(R.string.project_delete)
+                        .setPositiveButton(R.string.t_delete) { _, _ ->
+                            projects.delete(info.id)
+                            if (info.id == currentId) {
+                                currentId = null
+                                currentName = ""
+                                dirty = !editor.isBlank()
+                            }
+                            openPanel("projects")
+                        }
+                        .setNegativeButton(R.string.cancel, null)
+                        .show()
+                }
+            }
+            .show()
+    }
+
+    private fun renameProject(info: ProjectStore.Info) {
+        val et = EditText(this).apply {
+            setText(info.name)
+            setSelection(text.length)
+            isSingleLine = true
+        }
+        val wrap = FrameLayout(this)
+        wrap.setPadding(dp(20), dp(8), dp(20), 0)
+        wrap.addView(et)
+        AlertDialog.Builder(this)
+            .setTitle(R.string.project_rename)
+            .setView(wrap)
+            .setPositiveButton(R.string.ok) { _, _ ->
+                val n = et.text.toString().trim()
+                if (n.isNotEmpty()) {
+                    projects.rename(info.id, n)
+                    if (info.id == currentId) currentName = n
+                    openPanel("projects")
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
@@ -1125,7 +1379,8 @@ class MainActivity : Activity(), EditorView.Listener {
             toast(R.string.err_save)
             return
         }
-        val name = "KhattLab_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".png"
+        saveProject(true)
+        val name = "NawakhtGar_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".png"
         Thread {
             val ok = ImageIO.saveToGallery(this, bmp, name)
             runOnUiThread { toast(if (ok) R.string.saved else R.string.err_save) }

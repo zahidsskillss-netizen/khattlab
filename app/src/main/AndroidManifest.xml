@@ -23,7 +23,7 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Lets people send a photo from the gallery straight into KhattLab -->
+            <!-- Lets people send a photo from the gallery straight into NawakhtGar -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -33,7 +33,7 @@
 
         <provider
             android:name=".ShareProvider"
-            android:authorities="com.ghoragraphics.khattlab.share"
+            android:authorities="com.ghoragraphics.nawakhtgar.share"
             android:exported="false"
             android:grantUriPermissions="true" />
     </application>

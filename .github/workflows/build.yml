@@ -1,4 +1,4 @@
-name: Build KhattLab APK
+name: Build NawakhtGar APK
 
 on:
   push:
@@ -40,17 +40,17 @@ jobs:
           \`\`\`"
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk KhattLab.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk NawakhtGar.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: KhattLab-apk
-          path: KhattLab.apk
+          name: NawakhtGar-apk
+          path: NawakhtGar.apk
 
       - name: Publish release (direct download link)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: KhattLab (build ${{ github.run_number }})
-          files: KhattLab.apk
+          name: NawakhtGar (build ${{ github.run_number }})
+          files: NawakhtGar.apk
           make_latest: true
