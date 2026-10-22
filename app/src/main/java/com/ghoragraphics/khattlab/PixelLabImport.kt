@@ -47,8 +47,20 @@ object PixelLabImport {
 
     class Result(val doc: DocBackground, val layers: List<Layer>, val name: String, val missingFonts: List<String>)
 
+    /**
+     * PixelLab writes zip entries like "/res/RNjK". Android 14+ refuses such names in java.util.zip
+     * ("Invalid zip entry path"). Every name is reduced to a plain file name here before use,
+     * so that check can be switched off for this app.
+     */
+    fun allowPixelLabZips() {
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            try { dalvik.system.ZipPathValidator.clearCallback() } catch (e: Throwable) { }
+        }
+    }
+
     /** Is this file a PixelLab project? */
     fun isPixelLab(f: File): Boolean = try {
+        allowPixelLabZips()
         java.util.zip.ZipFile(f).use { z -> z.getEntry("data.plab") != null || z.getEntry("/data.plab") != null }
     } catch (e: Exception) { false }
 
@@ -56,6 +68,7 @@ object PixelLabImport {
 
     /** Background step. [work] is an empty folder the files are unpacked into. */
     fun read(plp: File, work: File, fallbackName: String): Read? {
+        allowPixelLabZips()
         work.deleteRecursively()
         work.mkdirs()
         val safe = Regex("^[A-Za-z0-9._-]{1,80}$")

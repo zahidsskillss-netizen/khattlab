@@ -163,10 +163,23 @@ class MainActivity : Activity(), EditorView.Listener {
 
     /** A photo shared into NawakhtGar from the gallery or another app. */
     private fun handleIncoming(i: Intent?) {
-        if (i?.action != Intent.ACTION_SEND) return
+        if (i == null) return
+        if (i.action == Intent.ACTION_VIEW) {
+            // a .plp project opened from the file manager or a chat
+            i.data?.let { readPlp(it) }
+            return
+        }
+        if (i.action != Intent.ACTION_SEND) return
         @Suppress("DEPRECATION")
         val uri: Uri? = i.getParcelableExtra(Intent.EXTRA_STREAM)
-        if (uri != null) loadBitmapThen(uri, 2560) { editor.setPhoto(it) }
+        if (uri == null) return
+        if (i.type?.startsWith("image/") == true) loadBitmapThen(uri, 2560) { editor.setPhoto(it) }
+        else readPlp(uri)
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        handleIncoming(intent)
     }
 
     private var trialOver = false
@@ -2149,6 +2162,7 @@ class MainActivity : Activity(), EditorView.Listener {
                 runOnUiThread { importPixelLab(keep, name, false) }
                 return@Thread
             }
+            PixelLabImport.allowPixelLabZips()
             val id = if (!copied) null else try { tmp.inputStream().use { projects.importPlp(it) } } catch (e: Exception) { null }
             tmp.delete()
             runOnUiThread {
@@ -2176,9 +2190,15 @@ class MainActivity : Activity(), EditorView.Listener {
     private fun importPixelLab(file: java.io.File, name: String, again: Boolean) {
         lastPixelLabName = name
         Thread {
-            val r = try { PixelLabImport.read(file, java.io.File(cacheDir, "pixellab_work"), name) } catch (e: Exception) { null } catch (e: OutOfMemoryError) { null }
+            var why = ""
+            val r = try { PixelLabImport.read(file, java.io.File(cacheDir, "pixellab_work"), name) }
+                catch (e: Exception) { why = e.toString(); null }
+                catch (e: OutOfMemoryError) { why = "out of memory"; null }
             if (r == null) {
-                runOnUiThread { toast(R.string.plp_err_open) }
+                runOnUiThread {
+                    // show the reason, so a screenshot tells what went wrong
+                    Toast.makeText(this, getString(R.string.plp_err_open) + if (why.isNotEmpty()) "\n$why" else "", Toast.LENGTH_LONG).show()
+                }
                 return@Thread
             }
             // fonts PixelLab took from its fonts folder: fetch them from that folder, if the user picked it once
@@ -2189,7 +2209,10 @@ class MainActivity : Activity(), EditorView.Listener {
                 for ((n, f) in found) {
                     if (fonts.findByFileName(n) == null) fonts.installFont(f, n)
                 }
-                val res = PixelLabImport.build(r, fonts)
+                val res = try { PixelLabImport.build(r, fonts) } catch (e: Exception) {
+                    Toast.makeText(this, getString(R.string.plp_err_open) + "\n" + e, Toast.LENGTH_LONG).show()
+                    return@runOnUiThread
+                }
                 if (activeTool != null) closePanel()
                 val keepId = if (again) currentId else null
                 editor.loadDoc(res.doc, res.layers)
