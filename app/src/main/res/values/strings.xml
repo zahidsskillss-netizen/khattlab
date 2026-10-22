@@ -214,4 +214,7 @@
     <string name="p_closed_shape">تړلی شکل</string>
     <string name="vector_hint">پر پاڼه کېکاږئ چې ټکي زیات شي؛ ټکی کش کړئ چې کږه شي</string>
     <string name="draw_start_hint">د رسامي لپاره «رسامي» تڼۍ کېکاږئ</string>
+    <string name="t_shape_image">عکس ډکول</string>
+    <string name="p_zoom">لویوالی</string>
+    <string name="shape_img_hint">عکس په ګوته کش کړئ؛ په دوو ګوتو یې لوی یا کوچنی کړئ. بیا ✓ بشپړ</string>
 </resources>

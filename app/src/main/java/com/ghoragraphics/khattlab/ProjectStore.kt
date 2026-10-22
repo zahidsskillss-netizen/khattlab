@@ -92,7 +92,12 @@ class ProjectStore(ctx: Context) {
                     arr.put(o)
                 }
                 is ImageLayer -> if (!l.bitmap.isRecycled) arr.put(l.toJson(fileFor(l.bitmap, false)))
-                is ShapeLayer -> arr.put(l.toJson())
+                is ShapeLayer -> {
+                    val o = l.toJson()
+                    val im = l.image
+                    if (im != null && !im.isRecycled) o.put("imageFile", fileFor(im, !im.hasAlpha()))
+                    arr.put(o)
+                }
                 is PathLayer -> arr.put(l.toJson())
             }
         }
@@ -162,7 +167,7 @@ class ProjectStore(ctx: Context) {
                 when (o.optString("type")) {
                     "text" -> layers.add(TextLayer.fromJson(o, pic(o.optString("textureFile", ""))))
                     "image" -> pic(o.optString("file"))?.let { layers.add(ImageLayer.fromJson(o, it)) }
-                    "shape" -> layers.add(ShapeLayer.fromJson(o))
+                    "shape" -> layers.add(ShapeLayer.fromJson(o, pic(o.optString("imageFile", ""))))
                     "path" -> layers.add(Stroke.fromJsonLayer(o))
                 }
             }

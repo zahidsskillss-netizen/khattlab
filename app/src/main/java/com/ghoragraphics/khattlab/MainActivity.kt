@@ -55,6 +55,7 @@ class MainActivity : Activity(), EditorView.Listener {
         private const val REQ_ADD_IMAGE = 14
         private const val REQ_TEXTURE = 15
         private const val REQ_REPLACE = 16
+        private const val REQ_SHAPE_IMG = 17
         private val SWATCHES = intArrayOf(
             0xFFFFFFFF.toInt(), 0xFF000000.toInt(), 0xFFE8B547.toInt(), 0xFFFFD54F.toInt(),
             0xFFFF9800.toInt(), 0xFFF44336.toInt(), 0xFFB71C1C.toInt(), 0xFFE91E63.toInt(),
@@ -71,7 +72,7 @@ class MainActivity : Activity(), EditorView.Listener {
             "stroke", "shadow", "inner", "emboss", "depth", "floor"
         )
         private val IMAGE_PANELS = COMMON_PANELS + setOf("flip", "round", "border", "imgshadow")
-        private val SHAPE_PANELS = COMMON_PANELS + setOf("sfill", "sstroke", "sform", "sshadow")
+        private val SHAPE_PANELS = COMMON_PANELS + setOf("sfill", "sstroke", "sform", "sshadow", "simage")
         private val PATH_PANELS = COMMON_PANELS + setOf("pcolor", "pwidth")
 
         private val STICKERS = (
@@ -349,6 +350,9 @@ class MainActivity : Activity(), EditorView.Listener {
                 panelTool("imgshadow", R.drawable.ic_filter_none, R.string.t_shadow)
             ) + tail
             editor.selected is ShapeLayer -> listOf(
+                toolButton("simage", R.drawable.ic_add_photo_alternate, R.string.t_shape_image) {
+                    if (ss?.hasImage() == true) togglePanel("simage") else pick(REQ_SHAPE_IMG)
+                },
                 panelTool("sfill", R.drawable.ic_format_color_fill, R.string.t_fill),
                 panelTool("sstroke", R.drawable.ic_border_color, R.string.t_stroke),
                 panelTool("sform", R.drawable.ic_tune, R.string.t_shape_form),
@@ -386,6 +390,7 @@ class MainActivity : Activity(), EditorView.Listener {
     }
 
     private fun closePanel() {
+        editor.imageAdjust = false
         activeTool = null
         panelHost.removeAllViews()
         panelHost.visibility = View.GONE
@@ -400,6 +405,7 @@ class MainActivity : Activity(), EditorView.Listener {
     }
 
     private fun openPanel(key: String) {
+        if (key != "simage") editor.imageAdjust = false
         val keepScroll = if (activeTool == key) panelScroll?.scrollY ?: 0 else 0
         activeTool = key
         panelHost.removeAllViews()
@@ -453,6 +459,32 @@ class MainActivity : Activity(), EditorView.Listener {
                         })
                     }
                 }
+            }
+
+            "simage" -> ss?.let { sh ->
+                if (!sh.hasImage()) {
+                    box.addView(chipRow(listOf(getString(R.string.p_pick_image))) { pick(REQ_SHAPE_IMG) })
+                    return@let
+                }
+                editor.imageAdjust = true
+                box.addView(label(R.string.shape_img_hint))
+                box.addView(slider(R.string.p_zoom, 20, 800, (sh.imgScale * 100).roundToInt(), { "$it%" }) { v ->
+                    us(false) { it.imgScale = v / 100f }
+                })
+                box.addView(slider(R.string.p_offset_x, -100, 100, (sh.imgX * 100).roundToInt(), { "$it" }) { v ->
+                    us(false) { it.imgX = v / 100f }
+                })
+                box.addView(slider(R.string.p_offset_y, -100, 100, (sh.imgY * 100).roundToInt(), { "$it" }) { v ->
+                    us(false) { it.imgY = v / 100f }
+                })
+                box.addView(chipRow(listOf("✓ " + getString(R.string.t_done), getString(R.string.p_reset), getString(R.string.t_replace), getString(R.string.p_remove))) { i ->
+                    when (i) {
+                        0 -> closePanel()
+                        1 -> { us { it.imgScale = 1f; it.imgX = 0f; it.imgY = 0f }; openPanel("simage") }
+                        2 -> pick(REQ_SHAPE_IMG)
+                        3 -> { us { it.image = null }; closePanel() }
+                    }
+                })
             }
 
             "sstroke" -> ss?.let { sh ->
@@ -1414,6 +1446,8 @@ class MainActivity : Activity(), EditorView.Listener {
 
     override fun onDrawChanged() {
         btnUndo.alpha = 1f
+        // the picture in a shape was moved by finger: show the new values
+        if (activeTool == "simage") openPanel("simage")
     }
 
     private fun buildDrawPanel(box: LinearLayout, vector: Boolean) {
@@ -1843,6 +1877,10 @@ class MainActivity : Activity(), EditorView.Listener {
         when (requestCode) {
             REQ_BG_IMAGE -> loadBitmapThen(uri, 2560) { editor.setPhoto(it) }
             REQ_ADD_IMAGE -> loadBitmapThen(uri, 1600) { editor.addImage(it) }
+            REQ_SHAPE_IMG -> loadBitmapThen(uri, 2048) { b ->
+                us { it.image = b; it.imgScale = 1f; it.imgX = 0f; it.imgY = 0f }
+                if (ss != null) openPanel("simage")
+            }
             REQ_REPLACE -> loadBitmapThen(uri, 1600) { b ->
                 ui {
                     val oldW = it.bitmap.width * it.scale

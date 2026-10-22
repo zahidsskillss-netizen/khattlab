@@ -1,6 +1,9 @@
 package com.ghoragraphics.khattlab
 
+import android.graphics.Bitmap
+import android.graphics.BitmapShader
 import android.graphics.Canvas
+import android.graphics.Matrix
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
@@ -40,7 +43,7 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
 
         fun isLine(k: Int) = k == LINE || k == LINE_ARROW || k == DOUBLE_ARROW
 
-        fun fromJson(j: JSONObject): ShapeLayer {
+        fun fromJson(j: JSONObject, image: Bitmap? = null): ShapeLayer {
             fun f(k: String, d: Float) = j.optDouble(k, d.toDouble()).toFloat()
             val l = ShapeLayer(j.optInt("kind", RECT), 0f, 0f)
             l.w = f("w", 400f); l.h = f("h", 400f)
@@ -51,6 +54,8 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
             l.corner = f("corner", 20f); l.points = j.optInt("points", 5); l.inner = f("inner", 45f)
             l.shadowRadius = f("shadowRadius", 0f); l.shadowDx = f("shadowDx", 0f); l.shadowDy = f("shadowDy", 0f)
             l.shadowColor = j.optInt("shadowColor", l.shadowColor)
+            l.image = image
+            l.imgScale = f("imgScale", 1f); l.imgX = f("imgX", 0f); l.imgY = f("imgY", 0f)
             l.readBase(j)
             return l
         }
@@ -83,6 +88,16 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
     var shadowDy = 0f
     var shadowColor = 0x88000000.toInt()
 
+    // a picture inside the shape (it fills the shape like a frame)
+    var image: Bitmap? = null
+    var imgScale = 1f                // 1 = just covers the shape
+    var imgX = 0f                    // move inside the shape, in parts of the shape size
+    var imgY = 0f
+
+    fun hasImage() = image?.isRecycled == false && !isLine(kind)
+
+    private val imgMatrix = Matrix()
+
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
     private val head = Path()
@@ -95,6 +110,7 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
         c.strokeWidth = strokeWidth; c.strokeColor = strokeColor; c.dashed = dashed
         c.corner = corner; c.points = points; c.inner = inner
         c.shadowRadius = shadowRadius; c.shadowDx = shadowDx; c.shadowDy = shadowDy; c.shadowColor = shadowColor
+        c.image = image; c.imgScale = imgScale; c.imgX = imgX; c.imgY = imgY
         return c
     }
 
@@ -107,6 +123,7 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
         put("corner", corner.toDouble()); put("points", points); put("inner", inner.toDouble())
         put("shadowRadius", shadowRadius.toDouble()); put("shadowDx", shadowDx.toDouble()); put("shadowDy", shadowDy.toDouble())
         put("shadowColor", shadowColor)
+        put("imgScale", imgScale.toDouble()); put("imgX", imgX.toDouble()); put("imgY", imgY.toDouble())
         putBase(this)
     }
 
@@ -259,7 +276,26 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
             return
         }
 
-        if (fillMode != 2) {
+        val img = image
+        if (hasImage() && img != null) {
+            paint.reset()
+            paint.isAntiAlias = true
+            paint.isFilterBitmap = true
+            paint.style = Paint.Style.FILL
+            val k = max(cW / img.width, cH / img.height) * imgScale.coerceAtLeast(0.1f)
+            imgMatrix.setScale(k, k)
+            imgMatrix.postTranslate(
+                (cW - img.width * k) / 2f + imgX * cW,
+                (cH - img.height * k) / 2f + imgY * cH
+            )
+            val sh = BitmapShader(img, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+            sh.setLocalMatrix(imgMatrix)
+            paint.shader = sh
+            if (wantShadow) paint.setShadowLayer(max(shadowRadius, 0.5f), shadowDx, shadowDy, shadowColor)
+            canvas.drawPath(path, paint)
+            paint.clearShadowLayer()
+            paint.shader = null
+        } else if (fillMode != 2) {
             setFill()
             if (wantShadow) paint.setShadowLayer(max(shadowRadius, 0.5f), shadowDx, shadowDy, shadowColor)
             canvas.drawPath(path, paint)

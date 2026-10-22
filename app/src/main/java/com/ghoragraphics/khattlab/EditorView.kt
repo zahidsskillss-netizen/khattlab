@@ -55,6 +55,11 @@ class EditorView @JvmOverloads constructor(
 
     var drawing: DrawSession? = null
         private set
+
+    /** When on, the finger moves and zooms the picture inside the selected shape, not the shape. */
+    var imageAdjust = false
+        set(v) { field = v; invalidate() }
+    private var startImgScale = 1f
     private var dragPoint = -1
     private val penPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pointPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -533,6 +538,12 @@ class EditorView @JvmOverloads constructor(
         selPath.close()
         canvas.drawPath(selPath, selPaint)
         if (s.locked) return
+        if (imageAdjust && s is ShapeLayer && s.hasImage()) {
+            selPaint.color = 0xFF1E88E5.toInt()
+            canvas.drawPath(selPath, selPaint)
+            selPaint.color = gold
+            return
+        }
         val ty = (handleText.descent() + handleText.ascent()) / 2f
         for (i in 0 until 4) {
             val hx = corners[2 * i]
@@ -653,8 +664,55 @@ class EditorView @JvmOverloads constructor(
         return true
     }
 
+    private fun imageTouch(s: ShapeLayer, e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                committed = false
+                mode = 1
+                lastX = e.x
+                lastY = e.y
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> if (e.pointerCount >= 2) {
+                mode = 2
+                startDist = spacing(e).coerceAtLeast(1f)
+                startImgScale = s.imgScale
+            }
+            MotionEvent.ACTION_MOVE -> {
+                commitOnce()
+                if (mode == 1) {
+                    // finger movement in page pixels, turned to the shape's own direction and size
+                    val dx = (e.x - lastX) / fit
+                    val dy = (e.y - lastY) / fit
+                    lastX = e.x
+                    lastY = e.y
+                    val a = Math.toRadians(-s.rotation.toDouble())
+                    val lx = (dx * Math.cos(a) - dy * Math.sin(a)).toFloat() / s.scale
+                    val ly = (dx * Math.sin(a) + dy * Math.cos(a)).toFloat() / s.scale
+                    s.imgX += lx / s.w.coerceAtLeast(1f)
+                    s.imgY += ly / s.h.coerceAtLeast(1f)
+                } else if (mode == 2 && e.pointerCount >= 2) {
+                    s.imgScale = (startImgScale * spacing(e) / startDist).coerceIn(0.2f, 8f)
+                }
+                invalidate()
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                val stay = if (e.actionIndex == 0) 1 else 0
+                lastX = e.getX(stay)
+                lastY = e.getY(stay)
+                mode = 1
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                mode = 0
+                if (committed) listener?.onDrawChanged()
+            }
+        }
+        return true
+    }
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
         drawing?.let { return drawTouch(it, e) }
+        val adj = selected as? ShapeLayer
+        if (imageAdjust && adj != null && adj.hasImage()) return imageTouch(adj, e)
         gestures.onTouchEvent(e)
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
