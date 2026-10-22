@@ -2166,7 +2166,7 @@ class MainActivity : Activity(), EditorView.Listener {
 
     // ---------- PixelLab projects ----------
 
-    private val prefs by lazy { getSharedPreferences("app", Context.MODE_PRIVATE) }
+    private val appPrefs by lazy { getSharedPreferences("app", Context.MODE_PRIVATE) }
     private var lastPixelLabName = ""
 
     /**
@@ -2182,7 +2182,7 @@ class MainActivity : Activity(), EditorView.Listener {
                 return@Thread
             }
             // fonts PixelLab took from its fonts folder: fetch them from that folder, if the user picked it once
-            val tree = prefs.getString("pixellab_fonts", null)?.let { Uri.parse(it) }
+            val tree = appPrefs.getString("pixellab_fonts", null)?.let { Uri.parse(it) }
             val needed = PixelLabImport.neededFonts(r)
             val found = if (tree != null && needed.isNotEmpty()) findFontsInTree(tree, needed) else emptyMap()
             runOnUiThread {
@@ -2269,7 +2269,7 @@ class MainActivity : Activity(), EditorView.Listener {
         try {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         } catch (e: Exception) { }
-        prefs.edit().putString("pixellab_fonts", uri.toString()).apply()
+        appPrefs.edit().putString("pixellab_fonts", uri.toString()).apply()
         val last = java.io.File(cacheDir, "pixellab_last.plp")
         if (last.exists()) importPixelLab(last, lastPixelLabName.ifBlank { currentName }, true)
     }
