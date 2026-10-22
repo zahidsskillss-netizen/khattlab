@@ -150,32 +150,52 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
         val minSide = min(cW, cH)
         val depth = minSide * 0.12f * tornDepth.coerceIn(0f, 100f) / 100f
         val step = max(minSide / 90f, 2f)
+        // first the depth of the tear at every point of every side
+        val offs = Array(4) { side ->
+            val bit = intArrayOf(SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM, SIDE_LEFT)[side]
+            val len = if (side % 2 == 0) cW else cH
+            if (tornSides and bit == 0) FloatArray(0) else {
+                val n = max(2, (len / step).toInt())
+                val rnd = java.util.Random(tornSeed * 7919L + side * 131L + seed)
+                val ph1 = rnd.nextFloat() * 6.283f
+                val ph2 = rnd.nextFloat() * 6.283f
+                val f1 = 2f + rnd.nextFloat() * 2f
+                val f2 = 7f + rnd.nextFloat() * 5f
+                val jr = java.util.Random(tornSeed * 104729L + side * 17L + seed * 3L)
+                FloatArray(n + 1) { i ->
+                    val t = i / n.toFloat()
+                    val wave = 0.55f + 0.28f * kotlin.math.sin(t * f1 * 6.283f + ph1) + 0.12f * kotlin.math.sin(t * f2 * 6.283f + ph2)
+                    (depth * wave + inset + (jr.nextFloat() - 0.5f) * 2f * jag).coerceAtLeast(0f)
+                }
+            }
+        }
         var first = true
         fun pt(x: Float, y: Float) { if (first) { out.moveTo(x, y); first = false } else out.lineTo(x, y) }
         // sides in order: top (left -> right), right (top -> bottom), bottom (right -> left), left (bottom -> top)
         for (side in 0 until 4) {
-            val bit = intArrayOf(SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM, SIDE_LEFT)[side]
+            val o = offs[side]
             val len = if (side % 2 == 0) cW else cH
-            val torn = tornSides and bit != 0
-            val n = if (torn) max(2, (len / step).toInt()) else 1
-            val rnd = java.util.Random(tornSeed * 7919L + side * 131L + seed)
-            val ph1 = rnd.nextFloat() * 6.283f
-            val ph2 = rnd.nextFloat() * 6.283f
-            val f1 = 2f + rnd.nextFloat() * 2f
-            val f2 = 7f + rnd.nextFloat() * 5f
-            val jr = java.util.Random(tornSeed * 104729L + side * 17L + seed * 3L)
-            for (i in 0 until n) {
-                val t = i / n.toFloat()
-                var off = 0f
-                if (torn) {
-                    val wave = 0.55f + 0.28f * kotlin.math.sin(t * f1 * 6.283f + ph1) + 0.12f * kotlin.math.sin(t * f2 * 6.283f + ph2)
-                    off = (depth * wave + inset + (jr.nextFloat() - 0.5f) * 2f * jag).coerceAtLeast(0f)
-                }
+            if (o.isEmpty()) {
+                // a straight side starts where the torn side before it ended, so no corner sticks out
+                val prev = offs[(side + 3) % 4]
+                val along = if (prev.isEmpty()) 0f else prev[prev.size - 1]
                 when (side) {
-                    0 -> pt(t * cW, off)
-                    1 -> pt(cW - off, t * cH)
-                    2 -> pt(cW - t * cW, cH - off)
-                    else -> pt(off, cH - t * cH)
+                    0 -> pt(along, 0f)
+                    1 -> pt(cW, along)
+                    2 -> pt(cW - along, cH)
+                    else -> pt(0f, cH - along)
+                }
+                continue
+            }
+            val n = o.size - 1
+            for (i in 0..n) {
+                val t = i / n.toFloat()
+                val off = o[i]
+                when (side) {
+                    0 -> pt(t * len, off)
+                    1 -> pt(cW - off, t * len)
+                    2 -> pt(cW - t * len, cH - off)
+                    else -> pt(off, cH - t * len)
                 }
             }
         }
