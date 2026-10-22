@@ -13,6 +13,13 @@ android {
         targetSdk = 34
         versionCode = 11
         versionName = "2.8"
+        // phones only (ARM): leaves out the emulator copies of the AI library, which made the APK huge
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+    }
+
+    // keep the AI library compressed inside the APK (smaller download)
+    packaging {
+        jniLibs { useLegacyPackaging = true }
     }
 
     // One fixed key, so every new APK installs over the old one (projects are kept)
