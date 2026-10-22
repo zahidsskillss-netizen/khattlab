@@ -13,8 +13,8 @@ android {
         targetSdk = 34
         versionCode = 11
         versionName = "2.8"
-        // phones only (ARM): leaves out the emulator copies of the AI library, which made the APK huge
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+        // 64-bit phones only: one copy of the AI library keeps the APK small enough to download in one go
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     // keep the AI library compressed inside the APK (smaller download)
