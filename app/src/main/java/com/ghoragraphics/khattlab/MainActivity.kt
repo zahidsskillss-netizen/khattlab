@@ -1393,26 +1393,7 @@ class MainActivity : Activity(), EditorView.Listener {
     }
 
     private fun showAbout() {
-        val version = try {
-            @Suppress("DEPRECATION")
-            packageManager.getPackageInfo(packageName, 0).versionName ?: ""
-        } catch (e: Exception) {
-            ""
-        }
-        val tv = TextView(this).apply {
-            text = getString(R.string.about_text, version)
-            textSize = 15f
-            typeface = uiFont
-            setTextColor(0xFFF2F2F5.toInt())
-            setLineSpacing(0f, 1.3f)
-            setPadding(dp(24), dp(16), dp(24), dp(8))
-            setTextIsSelectable(true)
-        }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.app_name)
-            .setView(tv)
-            .setPositiveButton(R.string.ok, null)
-            .show()
+        startActivity(Intent(this, AboutActivity::class.java))
     }
 
     // ================= shapes, stickers, drawing =================
