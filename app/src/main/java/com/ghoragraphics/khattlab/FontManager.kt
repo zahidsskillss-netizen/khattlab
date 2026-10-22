@@ -123,4 +123,41 @@ class FontManager(private val ctx: Context) {
         version++
         return item
     }
+
+    /** Adds a font file (copied into the app) under [fileName]. Returns null if it is not a usable font. */
+    fun installFont(src: File, fileName: String): FontItem? {
+        var name = fileName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+        if (!isFontName(name)) name += ".ttf"
+        val key = "file:$name"
+        fonts.firstOrNull { it.key == key }?.let { existing ->
+            val f = File(userDir, name)
+            if (f.exists() && f.length() == src.length()) return existing
+        }
+        val target = File(userDir, name)
+        try {
+            userDir.mkdirs()
+            src.inputStream().use { inp -> target.outputStream().use { out -> inp.copyTo(out) } }
+        } catch (e: Exception) {
+            target.delete()
+            return null
+        }
+        val tf = loadFile(target)
+        if (tf == null) {
+            target.delete()
+            return null
+        }
+        fonts.removeAll { it.key == key }
+        val item = FontItem(key, prettyName(name), tf)
+        fonts.add(item)
+        version++
+        return item
+    }
+
+    /** A font whose file name (without .ttf / .otf) is [name], if the app has it. */
+    fun findByFileName(name: String): FontItem? {
+        val want = name.substringAfterLast('/').substringBeforeLast('.').trim().lowercase()
+        if (want.isEmpty()) return null
+        return fonts.firstOrNull { it.key.substringAfter(':').substringBeforeLast('.').trim().lowercase() == want }
+            ?: fonts.firstOrNull { it.label.trim().lowercase() == want.replace('_', ' ').replace('-', ' ') }
+    }
 }

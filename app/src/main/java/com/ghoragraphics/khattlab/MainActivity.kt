@@ -59,6 +59,7 @@ class MainActivity : Activity(), EditorView.Listener {
         private const val REQ_BG_REMOVE = 18
         private const val REQ_PLP_SAVE = 19
         private const val REQ_PLP_OPEN = 20
+        private const val REQ_FONT_TREE = 21
         private val SWATCHES = intArrayOf(
             0xFFFFFFFF.toInt(), 0xFF000000.toInt(), 0xFFE8B547.toInt(), 0xFFFFD54F.toInt(),
             0xFFFF9800.toInt(), 0xFFF44336.toInt(), 0xFFB71C1C.toInt(), 0xFFE91E63.toInt(),
@@ -2125,12 +2126,31 @@ class MainActivity : Activity(), EditorView.Listener {
         }.start()
     }
 
+    private fun displayName(uri: Uri): String = try {
+        contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) ?: "" else ""
+        } ?: ""
+    } catch (e: Exception) { "" }
+
+    /** Opens a .plp file: a NawakhtGar project, or a PixelLab project. */
     private fun readPlp(uri: Uri) {
         toast(R.string.project_opening)
+        val name = displayName(uri).substringBeforeLast('.').ifBlank { defaultName() }
         Thread {
-            val id = try {
-                contentResolver.openInputStream(uri)?.use { projects.importPlp(it) }
-            } catch (e: Exception) { null }
+            // a copy first: a PixelLab project is read as a zip file
+            val tmp = java.io.File(cacheDir, "import.plp")
+            val copied = try {
+                contentResolver.openInputStream(uri)?.use { inp -> tmp.outputStream().use { inp.copyTo(it) } }
+                true
+            } catch (e: Exception) { false }
+            if (copied && PixelLabImport.isPixelLab(tmp)) {
+                val keep = java.io.File(cacheDir, "pixellab_last.plp")
+                tmp.renameTo(keep)
+                runOnUiThread { importPixelLab(keep, name, false) }
+                return@Thread
+            }
+            val id = if (!copied) null else try { tmp.inputStream().use { projects.importPlp(it) } } catch (e: Exception) { null }
+            tmp.delete()
             runOnUiThread {
                 val info = id?.let { n -> projects.list().firstOrNull { it.id == n } }
                 if (info == null) {
@@ -2142,6 +2162,116 @@ class MainActivity : Activity(), EditorView.Listener {
                 }
             }
         }.start()
+    }
+
+    // ---------- PixelLab projects ----------
+
+    private val prefs by lazy { getSharedPreferences("app", Context.MODE_PRIVATE) }
+    private var lastPixelLabName = ""
+
+    /**
+     * Turns a PixelLab .plp into a NawakhtGar project. [again] = the same file once more (after fonts
+     * were found), replacing the project it made the first time.
+     */
+    private fun importPixelLab(file: java.io.File, name: String, again: Boolean) {
+        lastPixelLabName = name
+        Thread {
+            val r = try { PixelLabImport.read(file, java.io.File(cacheDir, "pixellab_work"), name) } catch (e: Exception) { null } catch (e: OutOfMemoryError) { null }
+            if (r == null) {
+                runOnUiThread { toast(R.string.plp_err_open) }
+                return@Thread
+            }
+            // fonts PixelLab took from its fonts folder: fetch them from that folder, if the user picked it once
+            val tree = prefs.getString("pixellab_fonts", null)?.let { Uri.parse(it) }
+            val needed = PixelLabImport.neededFonts(r)
+            val found = if (tree != null && needed.isNotEmpty()) findFontsInTree(tree, needed) else emptyMap()
+            runOnUiThread {
+                for ((n, f) in found) {
+                    if (fonts.findByFileName(n) == null) fonts.installFont(f, n)
+                }
+                val res = PixelLabImport.build(r, fonts)
+                if (activeTool != null) closePanel()
+                val keepId = if (again) currentId else null
+                editor.loadDoc(res.doc, res.layers)
+                currentId = keepId
+                currentName = res.name
+                dirty = true
+                saveProject(true)
+                toast(R.string.plab_opened)
+                if (res.missingFonts.isNotEmpty()) askPixelLabFonts(res.missingFonts, tree != null)
+            }
+        }.start()
+    }
+
+    private fun askPixelLabFonts(missing: List<String>, triedFolder: Boolean) {
+        val list = missing.take(12).joinToString("\n") { "• " + it.substringBeforeLast('.') } + if (missing.size > 12) "\n…" else ""
+        AlertDialog.Builder(this)
+            .setTitle(R.string.plab_fonts_title)
+            .setMessage(getString(if (triedFolder) R.string.plab_fonts_text_again else R.string.plab_fonts_text) + "\n\n" + list)
+            .setPositiveButton(R.string.plab_pick_folder) { _, _ ->
+                val i = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                try {
+                    @Suppress("DEPRECATION")
+                    startActivityForResult(i, REQ_FONT_TREE)
+                } catch (e: ActivityNotFoundException) {
+                    toast(R.string.err_no_app)
+                }
+            }
+            .setNegativeButton(R.string.plab_later, null)
+            .show()
+    }
+
+    /** Looks through a folder the user picked (and the folders in it) for font files with these names. */
+    private fun findFontsInTree(tree: Uri, wanted: Set<String>): Map<String, java.io.File> {
+        val out = HashMap<String, java.io.File>()
+        val want = wanted.associateBy { it.lowercase() }
+        val dir = java.io.File(cacheDir, "pixellab_fonts").apply { mkdirs() }
+        try {
+            val queue = ArrayDeque<Pair<String, Int>>()
+            queue.addLast(Pair(android.provider.DocumentsContract.getTreeDocumentId(tree), 0))
+            var folders = 0
+            while (queue.isNotEmpty() && folders < 600 && out.size < want.size) {
+                val (docId, depth) = queue.removeFirst()
+                folders++
+                val kids = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
+                contentResolver.query(kids, arrayOf(
+                    android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE
+                ), null, null, null)?.use { c ->
+                    while (c.moveToNext()) {
+                        val id = c.getString(0) ?: continue
+                        val n = c.getString(1) ?: continue
+                        val mime = c.getString(2) ?: ""
+                        if (mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) {
+                            if (depth < 5) queue.addLast(Pair(id, depth + 1))
+                        } else {
+                            val orig = want[n.lowercase()] ?: continue
+                            if (out.containsKey(orig)) continue
+                            val f = java.io.File(dir, "f" + out.size + ".ttf")
+                            try {
+                                contentResolver.openInputStream(android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, id))?.use { inp ->
+                                    f.outputStream().use { inp.copyTo(it) }
+                                }
+                                out[orig] = f
+                            } catch (e: Exception) { f.delete() }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // folder no longer allowed: the user can pick it again
+        }
+        return out
+    }
+
+    private fun onFontTree(uri: Uri) {
+        try {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (e: Exception) { }
+        prefs.edit().putString("pixellab_fonts", uri.toString()).apply()
+        val last = java.io.File(cacheDir, "pixellab_last.plp")
+        if (last.exists()) importPixelLab(last, lastPixelLabName.ifBlank { currentName }, true)
     }
 
     private fun renameProject(info: ProjectStore.Info) {
@@ -2220,6 +2350,7 @@ class MainActivity : Activity(), EditorView.Listener {
         val uri = data?.data ?: return
         if (requestCode == REQ_PLP_SAVE) { writePlp(uri); return }
         if (requestCode == REQ_PLP_OPEN) { readPlp(uri); return }
+        if (requestCode == REQ_FONT_TREE) { onFontTree(uri); return }
         when (requestCode) {
             REQ_BG_IMAGE -> loadBitmapThen(uri, 2560) { editor.setPhoto(it) }
             REQ_ADD_IMAGE -> loadBitmapThen(uri, 1600) { editor.addImage(it) }

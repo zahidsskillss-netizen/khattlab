@@ -51,6 +51,10 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
     var letterSpacing = 0f
     var lineSpacing = 1f
     var curve = 0f                  // -100..100
+    /** Longest line in page pixels before the text wraps (0 = no wrapping). */
+    var wrapWidth = 0f
+    /** Parts of the text in another color: start, end, color (from PixelLab projects). */
+    var spans = mutableListOf<IntArray>()
 
     var strokeWidth = 0f
     var strokeColor = Color.BLACK
@@ -94,6 +98,7 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
     private val layerPaint = Paint()
     private val lightPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var staticLayout: StaticLayout? = null
+    private var spanLayout: StaticLayout? = null
     private val curvePath = Path()
     private var curveText = ""
     private var curveVOff = 0f
@@ -104,6 +109,8 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
         val c = TextLayer(text, x, y)
         c.copyBaseFrom(this)
         c.copyStyleFrom(this)
+        c.wrapWidth = wrapWidth
+        c.spans = spans.map { it.copyOf() }.toMutableList()
         return c
     }
 
@@ -141,6 +148,7 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
     override fun rescale(k: Float) {
         super.rescale(k)
         textSize *= k
+        wrapWidth *= k
         strokeWidth *= k
         shadowRadius *= k; shadowDx *= k; shadowDy *= k
         highlightPadding *= k
@@ -207,6 +215,10 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
     fun toJson(): JSONObject = styleToJson().apply {
         put("type", "text"); put("text", text)
         put("fillMode", fillMode)
+        if (wrapWidth > 0f) put("wrapWidth", wrapWidth.toDouble())
+        if (spans.isNotEmpty()) put("spans", org.json.JSONArray().apply {
+            spans.forEach { sp -> put(org.json.JSONArray().apply { put(sp[0]); put(sp[1]); put(sp[2]) }) }
+        })
         putBase(this)
     }
 
@@ -218,6 +230,12 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
             l.fillMode = j.optInt("fillMode", 0)
             l.texture = texture
             if (l.fillMode == 2 && texture == null) l.fillMode = 0
+            l.wrapWidth = j.optDouble("wrapWidth", 0.0).toFloat()
+            j.optJSONArray("spans")?.let { a ->
+                for (i in 0 until a.length()) a.optJSONArray(i)?.let { sp ->
+                    if (sp.length() >= 3) l.spans.add(intArrayOf(sp.optInt(0), sp.optInt(1), sp.optInt(2)))
+                }
+            }
             l.readBase(j)
             return l
         }
@@ -226,7 +244,7 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
     // ---- measuring ----
 
     override fun prepare(fm: FontManager) {
-        val key = "$text|$textSize|$fontKey|$letterSpacing|$lineSpacing|$align|$bold|$italic|$underline|$strike|$curve|${fm.version}"
+        val key = "$text|$textSize|$fontKey|$letterSpacing|$lineSpacing|$align|$bold|$italic|$underline|$strike|$curve|$wrapWidth|${spans.joinToString { it.joinToString(",") }}|${fm.version}"
         if (key == cacheKey) return
         cacheKey = key
 
@@ -244,7 +262,8 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
         if (!curved) {
             var w = 0f
             for (line in text.split('\n')) w = max(w, Layout.getDesiredWidth(line, paint))
-            val width = ceil(w).toInt().coerceAtLeast(1) + 4
+            var width = ceil(w).toInt().coerceAtLeast(1) + 4
+            if (wrapWidth > 1f) width = kotlin.math.min(width, ceil(wrapWidth).toInt().coerceAtLeast(1))
             val alignment = when (align) {
                 0 -> Layout.Alignment.ALIGN_NORMAL
                 2 -> Layout.Alignment.ALIGN_OPPOSITE
@@ -256,6 +275,20 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
                 .setIncludePad(true)
                 .build()
             staticLayout = l
+            // the same layout with the colored parts, used only for the fill
+            spanLayout = if (spans.isEmpty()) null else {
+                val ss = android.text.SpannableString(text)
+                for (sp in spans) {
+                    val a = sp[0].coerceIn(0, text.length)
+                    val b = sp[1].coerceIn(a, text.length)
+                    if (b > a) ss.setSpan(android.text.style.ForegroundColorSpan(sp[2]), a, b, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+                StaticLayout.Builder.obtain(ss, 0, ss.length, paint, width)
+                    .setAlignment(alignment)
+                    .setLineSpacing(0f, lineSpacing)
+                    .setIncludePad(true)
+                    .build()
+            }
             cW = l.width + if (italic) textSize * 0.25f else 0f
             cH = l.height.toFloat()
         } else {
@@ -279,8 +312,9 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
         }
     }
 
-    private fun drawContent(canvas: Canvas) {
+    private fun drawContent(canvas: Canvas, colored: Boolean = false) {
         if (curved) canvas.drawTextOnPath(curveText, curvePath, 0f, curveVOff, paint)
+        else if (colored && fillMode == 0 && spanLayout != null) spanLayout?.draw(canvas)
         else staticLayout?.draw(canvas)
     }
 
@@ -446,7 +480,7 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
             @Suppress("DEPRECATION")
             paint.maskFilter = EmbossMaskFilter(floatArrayOf(-1f, -1f, 1f), 0.45f, 10f, max(1f, textSize * 0.03f * emboss / 50f))
         }
-        drawContent(canvas)
+        drawContent(canvas, true)
 
         if (lightFront) {
             // light side brighter, the other side darker

@@ -150,6 +150,12 @@ abstract class Layer {
         out.postConcat(post)
     }
 
+    /** Width and height of the content box (no padding), before size and rotation. */
+    fun contentSize(fm: FontManager): FloatArray {
+        prepare(fm)
+        return floatArrayOf(cW, cH)
+    }
+
     /** Page positions of the 4 corners of the content (no padding): top-left, top-right, bottom-right, bottom-left. */
     fun contentCorners(fm: FontManager, out: FloatArray) {
         prepare(fm)

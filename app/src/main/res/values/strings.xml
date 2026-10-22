@@ -327,7 +327,7 @@
 
     <!-- .plp project files -->
     <string name="plp_save">د plp فایل په ډول ساتل</string>
-    <string name="plp_open">plp فایل راوړل</string>
+    <string name="plp_open">plp فایل راوړل (نوښتګر یا PixelLab)</string>
     <string name="plp_saving">پروژه د plp فایل په ډول ساتل کېږي…</string>
     <string name="plp_saved">پروژه د plp فایل په ډول وساتل شوه</string>
     <string name="plp_err_save">plp فایل ونه ساتل شو</string>
@@ -335,4 +335,10 @@
     <string name="plp_err_open">دا فایل د نوښتګر پروژه نه ده، یا خراب دی</string>
     <string name="bg_ai_offline">د انسان شالید لرې شو (بې انټرنېټه AI)</string>
     <string name="bg_ai_downloading">د شیانو لپاره قوي AI ښکته کېږي: %1$d%%</string>
+    <string name="plab_opened">د PixelLab پروژه راوړل شوه</string>
+    <string name="plab_fonts_title">ځینې فونټونه نشته</string>
+    <string name="plab_fonts_text">دا پروژه هغه فونټونه کاروي چې د PixelLab په فولډر کې دي، نه د plp فایل دننه. یو ځل د PixelLab فولډر وټاکئ (Internal storage › pixelLab)، نوښتګر به پخپله پکې فونټونه پیدا کړي. تر هغه پورې دا متنونه په بل فونټ ښکاري:</string>
+    <string name="plab_fonts_text_again">دا فونټونه په ټاکلي فولډر کې هم ونه موندل شول. که په بل فولډر کې وي، هغه وټاکئ، یا یې د «فونټ راوړل» په تڼۍ زیات کړئ:</string>
+    <string name="plab_pick_folder">فولډر ټاکل</string>
+    <string name="plab_later">وروسته</string>
 </resources>
