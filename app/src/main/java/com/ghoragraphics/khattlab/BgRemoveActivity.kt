@@ -232,35 +232,143 @@ class BgRemoveActivity : Activity() {
 
     // ---------- auto (AI) ----------
 
+    /**
+     * Auto removal, in this order:
+     *  1. Google's object AI (people, animals, things), when Google Play services has it on the phone
+     *  2. otherwise the AI built into this app (people only), which works without internet,
+     *     while the object AI is asked to download for next time
+     */
     private fun runAuto() {
         if (busy.visibility == View.VISIBLE) return
         busy.visibility = View.VISIBLE
         toast(R.string.bg_working)
+        val seg = try {
+            com.google.mlkit.vision.segmentation.subject.SubjectSegmentation.getClient(
+                com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions.Builder()
+                    .enableForegroundBitmap()
+                    .build()
+            )
+        } catch (e: Throwable) { null }
+        if (seg == null) { runSelfie(); return }
+        val installer = try { com.google.android.gms.common.moduleinstall.ModuleInstall.getClient(this) } catch (e: Throwable) { null }
+        if (installer == null) { runSubject(seg, true); return }
         try {
-            val options = com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions.Builder()
-                .enableForegroundBitmap()
-                .build()
-            val seg = com.google.mlkit.vision.segmentation.subject.SubjectSegmentation.getClient(options)
-            val input = com.google.mlkit.vision.common.InputImage.fromBitmap(orig, 0)
-            seg.process(input)
+            installer.areModulesAvailable(seg)
                 .addOnSuccessListener { r ->
-                    busy.visibility = View.GONE
+                    if (r.areModulesAvailable()) runSubject(seg, true)
+                    else { seg.close(); requestObjectAi(installer); runSelfie() }
+                }
+                .addOnFailureListener { seg.close(); runSelfie() }
+        } catch (e: Throwable) {
+            seg.close()
+            runSelfie()
+        }
+    }
+
+    private fun runSubject(seg: com.google.mlkit.vision.segmentation.subject.SubjectSegmenter, fallback: Boolean) {
+        try {
+            seg.process(com.google.mlkit.vision.common.InputImage.fromBitmap(orig, 0))
+                .addOnSuccessListener { r ->
+                    seg.close()
                     val fg = r.foregroundBitmap
                     if (fg == null) {
-                        toast(R.string.bg_nothing)
+                        if (fallback) runSelfie() else { busy.visibility = View.GONE; toast(R.string.bg_nothing) }
                     } else {
+                        busy.visibility = View.GONE
                         remember()
                         work = if (fg.width == orig.width && fg.height == orig.height) fg.copy(Bitmap.Config.ARGB_8888, true)
                         else Bitmap.createScaledBitmap(fg, orig.width, orig.height, true).copy(Bitmap.Config.ARGB_8888, true)
                         view.invalidate()
                         toast(R.string.bg_auto_done)
                     }
-                    seg.close()
                 }
                 .addOnFailureListener {
-                    busy.visibility = View.GONE
                     seg.close()
-                    // usually: the AI part is still being downloaded by Google Play services
+                    if (fallback) runSelfie() else { busy.visibility = View.GONE; Toast.makeText(this, R.string.bg_auto_fail, Toast.LENGTH_LONG).show() }
+                }
+        } catch (e: Throwable) {
+            seg.close()
+            runSelfie()
+        }
+    }
+
+    /** Asks Google Play services to download the object AI now (a sideloaded APK never gets it at install). */
+    private fun requestObjectAi(installer: com.google.android.gms.common.moduleinstall.ModuleInstallClient) {
+        try {
+            val seg = com.google.mlkit.vision.segmentation.subject.SubjectSegmentation.getClient(
+                com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions.Builder().enableForegroundBitmap().build()
+            )
+            var lastShown = -20
+            val listener = com.google.android.gms.common.moduleinstall.InstallStatusListener { u ->
+                val p = u.progressInfo
+                if (p != null && p.totalBytesToDownload > 0) {
+                    val pct = (p.bytesDownloaded * 100 / p.totalBytesToDownload).toInt()
+                    if (pct - lastShown >= 25 && !isFinishing) {
+                        lastShown = pct
+                        Toast.makeText(this, getString(R.string.bg_ai_downloading, pct), Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            val req = com.google.android.gms.common.moduleinstall.ModuleInstallRequest.newBuilder()
+                .addApi(seg)
+                .setListener(listener)
+                .build()
+            installer.installModules(req)
+                .addOnCompleteListener { seg.close() }
+        } catch (e: Throwable) {
+            // no Google Play services: the built-in AI is used
+        }
+    }
+
+    /** The AI built into the app: finds people, works without internet. */
+    private fun runSelfie() {
+        try {
+            // a smaller copy is enough for the mask, and much faster
+            val k = min(1f, 1024f / max(orig.width, orig.height))
+            val small = if (k < 1f) Bitmap.createScaledBitmap(orig, max(1, (orig.width * k).roundToInt()), max(1, (orig.height * k).roundToInt()), true) else orig
+            val seg = com.google.mlkit.vision.segmentation.Segmentation.getClient(
+                com.google.mlkit.vision.segmentation.selfie.SelfieSegmenterOptions.Builder()
+                    .setDetectorMode(com.google.mlkit.vision.segmentation.selfie.SelfieSegmenterOptions.SINGLE_IMAGE_MODE)
+                    .build()
+            )
+            seg.process(com.google.mlkit.vision.common.InputImage.fromBitmap(small, 0))
+                .addOnSuccessListener { mask ->
+                    seg.close()
+                    val mw = mask.width
+                    val mh = mask.height
+                    val buf = mask.buffer
+                    buf.rewind()
+                    val alpha = IntArray(mw * mh)
+                    var found = 0
+                    for (i in 0 until mw * mh) {
+                        val c = buf.float
+                        // a soft but clean edge around the person
+                        val a = ((c - 0.3f) / 0.4f).coerceIn(0f, 1f)
+                        if (a > 0.5f) found++
+                        alpha[i] = ((a * 255f).roundToInt() shl 24)
+                    }
+                    if (found < mw * mh / 200) {
+                        busy.visibility = View.GONE
+                        Toast.makeText(this, R.string.bg_auto_fail, Toast.LENGTH_LONG).show()
+                        return@addOnSuccessListener
+                    }
+                    val m = Bitmap.createBitmap(alpha, mw, mh, Bitmap.Config.ARGB_8888)
+                    val out = orig.copy(Bitmap.Config.ARGB_8888, true)
+                    val cv = Canvas(out)
+                    val p = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+                        xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+                    }
+                    cv.drawBitmap(m, null, android.graphics.RectF(0f, 0f, out.width.toFloat(), out.height.toFloat()), p)
+                    m.recycle()
+                    busy.visibility = View.GONE
+                    remember()
+                    work = out
+                    view.invalidate()
+                    toast(R.string.bg_ai_offline)
+                }
+                .addOnFailureListener {
+                    seg.close()
+                    busy.visibility = View.GONE
                     Toast.makeText(this, R.string.bg_auto_fail, Toast.LENGTH_LONG).show()
                 }
         } catch (e: Throwable) {

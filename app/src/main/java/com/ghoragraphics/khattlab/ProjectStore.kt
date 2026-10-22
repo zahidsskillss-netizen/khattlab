@@ -37,7 +37,7 @@ class ProjectStore(ctx: Context) {
     fun exists(id: String) = File(File(root, id), "project.json").exists()
 
     fun list(): List<Info> {
-        val dirs = root.listFiles()?.filter { it.isDirectory } ?: return emptyList()
+        val dirs = root.listFiles()?.filter { it.isDirectory && !it.name.endsWith(".part") } ?: return emptyList()
         val out = mutableListOf<Info>()
         for (d in dirs) {
             val f = File(d, "project.json")
@@ -209,6 +209,90 @@ class ProjectStore(ctx: Context) {
         } catch (e: Exception) {
             dst.deleteRecursively()
             false
+        }
+    }
+
+    // ---------- .plp files: a project packed into one file (a zip), to keep or send ----------
+
+    /** Name of a project, for its .plp file name. */
+    fun nameOf(id: String): String = try {
+        JSONObject(File(File(root, id), "project.json").readText()).optString("name", "")
+    } catch (e: Exception) { "" }
+
+    /** Packs project [id] into [out] as a .plp file. Run in the background. */
+    fun exportPlp(id: String, out: java.io.OutputStream): Boolean {
+        val dir = File(root, id)
+        val files = dir.listFiles()?.filter { it.isFile && !it.name.endsWith(".tmp") } ?: return false
+        if (files.none { it.name == "project.json" }) return false
+        return try {
+            java.util.zip.ZipOutputStream(java.io.BufferedOutputStream(out)).use { z ->
+                // a small marker so the app knows this file is one of its projects
+                z.putNextEntry(java.util.zip.ZipEntry("nawakhtgar.txt"))
+                z.write("NawakhtGar project 1".toByteArray())
+                z.closeEntry()
+                for (f in files) {
+                    z.putNextEntry(java.util.zip.ZipEntry(f.name))
+                    f.inputStream().use { it.copyTo(z) }
+                    z.closeEntry()
+                }
+            }
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Unpacks a .plp file as a new project. Returns its id, or null if the file is not a NawakhtGar project.
+     * Run in the background.
+     */
+    fun importPlp(input: java.io.InputStream): String? {
+        val id = newId()
+        val dir = File(root, "$id.part")
+        dir.deleteRecursively()
+        dir.mkdirs()
+        val safe = Regex("^[A-Za-z0-9._-]{1,80}$")
+        var total = 0L
+        val maxTotal = 300L * 1024 * 1024
+        return try {
+            java.util.zip.ZipInputStream(java.io.BufferedInputStream(input)).use { z ->
+                var e = z.nextEntry
+                var count = 0
+                while (e != null) {
+                    // only plain file names: nothing can be written outside the project folder
+                    val name = e.name.substringAfterLast('/')
+                    if (!e.isDirectory && safe.matches(name) && name != "nawakhtgar.txt" && !name.endsWith(".tmp")) {
+                        if (++count > 500) throw IllegalStateException("too many files")
+                        File(dir, name).outputStream().use { o ->
+                            val buf = ByteArray(64 * 1024)
+                            while (true) {
+                                val n = z.read(buf)
+                                if (n < 0) break
+                                total += n
+                                if (total > maxTotal) throw IllegalStateException("too big")
+                                o.write(buf, 0, n)
+                            }
+                        }
+                    }
+                    z.closeEntry()
+                    e = z.nextEntry
+                }
+            }
+            val pj = File(dir, "project.json")
+            if (!pj.exists()) throw IllegalStateException("not a project")
+            val j = JSONObject(pj.readText())
+            if (!j.has("layers") && !j.has("width")) throw IllegalStateException("not a project")
+            j.put("time", System.currentTimeMillis())
+            pj.writeText(j.toString())
+            val dst = File(root, id)
+            if (!dir.renameTo(dst)) throw IllegalStateException("move failed")
+            id
+        } catch (e: Exception) {
+            dir.deleteRecursively()
+            null
+        } catch (e: OutOfMemoryError) {
+            dir.deleteRecursively()
+            null
         }
     }
 }

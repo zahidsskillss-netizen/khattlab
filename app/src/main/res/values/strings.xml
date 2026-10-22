@@ -310,7 +310,7 @@
     <string name="bg_working">شالید لټول کېږي…</string>
     <string name="bg_auto_done">شالید لرې شو؛ که څه پاتې وي په پاکولو یې سم کړئ</string>
     <string name="bg_nothing">په عکس کې کوم انسان یا شی ونه موندل شو</string>
-    <string name="bg_auto_fail">اتوماتیک لرې کول اوس ونه شول. انټرنېټ روښانه کړئ او یوه دقیقه وروسته بیا هڅه وکړئ (لومړی ځل Google Play services یې ښکته کوي). تر هغه جادويي یا پاکول وکاروئ.</string>
+    <string name="bg_auto_fail">په دې عکس کې AI انسان ونه موند. د شیانو لپاره جادويي یا پاکول وکاروئ.</string>
 
     <!-- paper effects -->
     <string name="t_paper">پاڼه څیرل</string>
@@ -324,4 +324,15 @@
     <string name="pp_corner">کوم کونج</string>
     <string name="pp_curl_size">د قات اندازه</string>
     <string name="pp_paper_color">د پاڼې رنګ</string>
+
+    <!-- .plp project files -->
+    <string name="plp_save">د plp فایل په ډول ساتل</string>
+    <string name="plp_open">plp فایل راوړل</string>
+    <string name="plp_saving">پروژه د plp فایل په ډول ساتل کېږي…</string>
+    <string name="plp_saved">پروژه د plp فایل په ډول وساتل شوه</string>
+    <string name="plp_err_save">plp فایل ونه ساتل شو</string>
+    <string name="plp_opened">پروژه راوړل شوه</string>
+    <string name="plp_err_open">دا فایل د نوښتګر پروژه نه ده، یا خراب دی</string>
+    <string name="bg_ai_offline">د انسان شالید لرې شو (بې انټرنېټه AI)</string>
+    <string name="bg_ai_downloading">د شیانو لپاره قوي AI ښکته کېږي: %1$d%%</string>
 </resources>

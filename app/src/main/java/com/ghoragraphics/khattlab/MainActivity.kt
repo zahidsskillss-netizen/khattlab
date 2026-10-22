@@ -57,6 +57,8 @@ class MainActivity : Activity(), EditorView.Listener {
         private const val REQ_REPLACE = 16
         private const val REQ_SHAPE_IMG = 17
         private const val REQ_BG_REMOVE = 18
+        private const val REQ_PLP_SAVE = 19
+        private const val REQ_PLP_OPEN = 20
         private val SWATCHES = intArrayOf(
             0xFFFFFFFF.toInt(), 0xFF000000.toInt(), 0xFFE8B547.toInt(), 0xFFFFD54F.toInt(),
             0xFFFF9800.toInt(), 0xFFF44336.toInt(), 0xFFB71C1C.toInt(), 0xFFE91E63.toInt(),
@@ -2002,6 +2004,15 @@ class MainActivity : Activity(), EditorView.Listener {
                 confirmNew()
             }
         })
+        // .plp files: keep a project in the file manager, send it, or bring one back
+        box.addView(chipRow(listOf("⬇ " + getString(R.string.plp_save), "⬆ " + getString(R.string.plp_open))) { i ->
+            if (i == 0) {
+                if (editor.isBlank()) toast(R.string.project_empty)
+                else saveProject(true) { currentId?.let { exportPlp(it) } }
+            } else {
+                pickPlp()
+            }
+        })
         val list = projects.list()
         if (list.isEmpty()) {
             box.addView(label(R.string.project_none))
@@ -2038,7 +2049,7 @@ class MainActivity : Activity(), EditorView.Listener {
     }
 
     private fun projectMenu(info: ProjectStore.Info) {
-        val items = arrayOf(getString(R.string.project_open), getString(R.string.project_rename), getString(R.string.t_copy), getString(R.string.t_delete))
+        val items = arrayOf(getString(R.string.project_open), getString(R.string.project_rename), getString(R.string.t_copy), getString(R.string.t_delete), getString(R.string.plp_save))
         AlertDialog.Builder(this)
             .setTitle(info.name)
             .setItems(items) { _, which ->
@@ -2062,9 +2073,75 @@ class MainActivity : Activity(), EditorView.Listener {
                         }
                         .setNegativeButton(R.string.cancel, null)
                         .show()
+                    4 -> if (info.id == currentId && dirty) saveProject(true) { exportPlp(info.id) } else exportPlp(info.id)
                 }
             }
             .show()
+    }
+
+    // ---------- .plp project files ----------
+
+    private var plpExportId: String? = null
+
+    /** Asks where to save project [id] as a .plp file (file manager, Drive...). */
+    private fun exportPlp(id: String) {
+        plpExportId = id
+        val base = projects.nameOf(id).ifEmpty { "NawakhtGar" }.replace(Regex("[\\\\/:*?\"<>|]"), "-").trim()
+        val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/octet-stream"
+            putExtra(Intent.EXTRA_TITLE, "$base.plp")
+        }
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(i, REQ_PLP_SAVE)
+        } catch (e: ActivityNotFoundException) {
+            toast(R.string.err_no_app)
+        }
+    }
+
+    private fun pickPlp() {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(i, REQ_PLP_OPEN)
+        } catch (e: ActivityNotFoundException) {
+            toast(R.string.err_no_app)
+        }
+    }
+
+    private fun writePlp(uri: Uri) {
+        val id = plpExportId ?: return
+        plpExportId = null
+        toast(R.string.plp_saving)
+        Thread {
+            val ok = try {
+                contentResolver.openOutputStream(uri, "wt")?.use { projects.exportPlp(id, it) } ?: false
+            } catch (e: Exception) { false }
+            runOnUiThread { toast(if (ok) R.string.plp_saved else R.string.plp_err_save) }
+        }.start()
+    }
+
+    private fun readPlp(uri: Uri) {
+        toast(R.string.project_opening)
+        Thread {
+            val id = try {
+                contentResolver.openInputStream(uri)?.use { projects.importPlp(it) }
+            } catch (e: Exception) { null }
+            runOnUiThread {
+                val info = id?.let { n -> projects.list().firstOrNull { it.id == n } }
+                if (info == null) {
+                    toast(R.string.plp_err_open)
+                } else {
+                    toast(R.string.plp_opened)
+                    openProject(info)
+                    if (activeTool == "projects") openPanel("projects")
+                }
+            }
+        }.start()
     }
 
     private fun renameProject(info: ProjectStore.Info) {
@@ -2141,6 +2218,8 @@ class MainActivity : Activity(), EditorView.Listener {
         }
         if (resultCode != RESULT_OK) return
         val uri = data?.data ?: return
+        if (requestCode == REQ_PLP_SAVE) { writePlp(uri); return }
+        if (requestCode == REQ_PLP_OPEN) { readPlp(uri); return }
         when (requestCode) {
             REQ_BG_IMAGE -> loadBitmapThen(uri, 2560) { editor.setPhoto(it) }
             REQ_ADD_IMAGE -> loadBitmapThen(uri, 1600) { editor.addImage(it) }
