@@ -24,13 +24,34 @@ class Stroke(
     var closed: Boolean,     // vector pen: join the last point to the first
     var fill: Int            // vector pen: inside color (transparent = none)
 ) {
-    fun copy() = Stroke(pts.copyOf(), color, width, brush, smooth, closed, fill)
+    /**
+     * Bezier pen: for every point, its two handles (in x, in y, out x, out y) measured from the point.
+     * null = an older vector line (a smooth curve through the points).
+     */
+    var ctrl: FloatArray? = null
+    var cap = CAP_ROUND
+    var grad = 0             // second color of a gradient line (0 = one color)
+
+    val isBezier get() = ctrl != null
+
+    fun copy() = Stroke(pts.copyOf(), color, width, brush, smooth, closed, fill).also {
+        it.ctrl = ctrl?.copyOf(); it.cap = cap; it.grad = grad
+    }
+
+    /** Keeps the handles array the same length as the points (4 numbers per point). */
+    fun fixCtrl() {
+        val c = ctrl ?: return
+        val need = pts.size * 2
+        if (c.size != need) ctrl = c.copyOf(need)
+    }
 
     fun toJson(): JSONObject = JSONObject().apply {
         val a = JSONArray()
         for (v in pts) a.put(v.toDouble())
         put("pts", a); put("color", color); put("width", width.toDouble()); put("brush", brush)
         put("smooth", smooth); put("closed", closed); put("fill", fill)
+        ctrl?.let { c -> put("ctrl", JSONArray().apply { for (v in c) put(v.toDouble()) }) }
+        put("cap", cap); put("grad", grad)
     }
 
     companion object {
@@ -42,13 +63,21 @@ class Stroke(
         const val BRUSH_CALLIGRAPHY = 5
         const val BRUSH_COUNT = 6
 
+        const val CAP_ROUND = 0
+        const val CAP_BUTT = 1
+        const val CAP_SQUARE = 2
+
         fun fromJson(j: JSONObject): Stroke {
             val a = j.optJSONArray("pts") ?: JSONArray()
             val p = FloatArray(a.length()) { a.optDouble(it, 0.0).toFloat() }
-            return Stroke(
+            val s = Stroke(
                 p, j.optInt("color", Color.BLACK), j.optDouble("width", 8.0).toFloat(), j.optInt("brush", 0),
                 j.optBoolean("smooth"), j.optBoolean("closed"), j.optInt("fill", Color.TRANSPARENT)
             )
+            j.optJSONArray("ctrl")?.let { c -> s.ctrl = FloatArray(c.length()) { c.optDouble(it, 0.0).toFloat() }; s.fixCtrl() }
+            s.cap = j.optInt("cap", CAP_ROUND)
+            s.grad = j.optInt("grad", 0)
+            return s
         }
 
         /** Builds the path of a stroke: soft curve for hand drawing, smooth curve through points for the vector pen. */
@@ -60,6 +89,21 @@ class Stroke(
             out.moveTo(p[0], p[1])
             if (n == 1) {
                 out.lineTo(p[0] + 0.1f, p[1])
+                return
+            }
+            val c = s.ctrl
+            if (c != null && c.size >= n * 4) {
+                // bezier pen: from each point's "out" handle to the next point's "in" handle
+                val count = if (s.closed) n else n - 1
+                for (i in 0 until count) {
+                    val j = (i + 1) % n
+                    out.cubicTo(
+                        p[2 * i] + c[4 * i + 2], p[2 * i + 1] + c[4 * i + 3],
+                        p[2 * j] + c[4 * j], p[2 * j + 1] + c[4 * j + 1],
+                        p[2 * j], p[2 * j + 1]
+                    )
+                }
+                if (s.closed) out.close()
                 return
             }
             if (s.smooth) {
@@ -89,6 +133,7 @@ class Stroke(
             if (closed) ((k % n) + n) % n else k.coerceIn(0, n - 1)
 
         private val tmp = Path()
+        private val gradBox = RectF()
         private val sprayPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
         /** Draws one stroke with its brush. [alphaMul] is used for the eraser-free preview. */
@@ -104,9 +149,26 @@ class Stroke(
             if (s.width <= 0f) return
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = s.width
-            paint.strokeCap = Paint.Cap.ROUND
+            paint.strokeCap = when (s.cap) {
+                CAP_BUTT -> Paint.Cap.BUTT
+                CAP_SQUARE -> Paint.Cap.SQUARE
+                else -> Paint.Cap.ROUND
+            }
             paint.strokeJoin = Paint.Join.ROUND
             paint.color = s.color
+            if (s.grad != 0 && s.brush == BRUSH_PEN) {
+                // gradient along the line, from the first color to the second
+                tmp.computeBounds(gradBox, true)
+                val horiz = gradBox.width() >= gradBox.height()
+                paint.shader = android.graphics.LinearGradient(
+                    gradBox.left, gradBox.top,
+                    if (horiz) gradBox.right else gradBox.left, if (horiz) gradBox.top else gradBox.bottom,
+                    s.color, s.grad, android.graphics.Shader.TileMode.CLAMP
+                )
+                c.drawPath(tmp, paint)
+                paint.shader = null
+                return
+            }
             when (s.brush) {
                 BRUSH_MARKER -> {
                     paint.strokeCap = Paint.Cap.SQUARE
@@ -243,6 +305,7 @@ class PathLayer(val strokes: MutableList<Stroke>, var bw: Float, var bh: Float) 
         for (s in strokes) {
             s.width *= k
             for (i in s.pts.indices) s.pts[i] *= k
+            s.ctrl?.let { c -> for (i in c.indices) c[i] *= k }
         }
     }
 

@@ -56,6 +56,7 @@ class MainActivity : Activity(), EditorView.Listener {
         private const val REQ_TEXTURE = 15
         private const val REQ_REPLACE = 16
         private const val REQ_SHAPE_IMG = 17
+        private const val REQ_BG_REMOVE = 18
         private val SWATCHES = intArrayOf(
             0xFFFFFFFF.toInt(), 0xFF000000.toInt(), 0xFFE8B547.toInt(), 0xFFFFD54F.toInt(),
             0xFFFF9800.toInt(), 0xFFF44336.toInt(), 0xFFB71C1C.toInt(), 0xFFE91E63.toInt(),
@@ -71,7 +72,7 @@ class MainActivity : Activity(), EditorView.Listener {
             "styles", "font", "style", "color", "texture", "curve", "background", "align", "spacing",
             "stroke", "shadow", "inner", "emboss", "depth", "floor"
         )
-        private val IMAGE_PANELS = COMMON_PANELS + setOf("flip", "round", "border", "outline", "imgshadow")
+        private val IMAGE_PANELS = COMMON_PANELS + setOf("flip", "round", "border", "outline", "imgshadow", "paper")
         private val SHAPE_PANELS = COMMON_PANELS + setOf("sfill", "sstroke", "outline", "sform", "sshadow", "simage")
         private val PATH_PANELS = COMMON_PANELS + setOf("pcolor", "pwidth")
 
@@ -364,7 +365,9 @@ class MainActivity : Activity(), EditorView.Listener {
                 panelTool("floor", R.drawable.ic_dehaze, R.string.t_shadow3d)
             ) + tail
             editor.selected is ImageLayer -> listOf(
-                toolButton("replace", R.drawable.ic_swap_horiz, R.string.t_replace) { pick(REQ_REPLACE) }
+                toolButton("replace", R.drawable.ic_swap_horiz, R.string.t_replace) { pick(REQ_REPLACE) },
+                toolButton("bgremove", R.drawable.ic_auto_fix, R.string.t_remove_bg) { openBgRemover() },
+                panelTool("paper", R.drawable.ic_page_curl, R.string.t_paper)
             ) + arrange + common + listOf(
                 panelTool("flip", R.drawable.ic_flip, R.string.t_flip),
                 panelTool("round", R.drawable.ic_rounded_corner, R.string.t_round),
@@ -382,7 +385,9 @@ class MainActivity : Activity(), EditorView.Listener {
                 panelTool("sform", R.drawable.ic_tune, R.string.t_shape_form),
                 panelTool("sshadow", R.drawable.ic_filter_none, R.string.t_shadow)
             ) + arrange + common + tail
-            editor.selected is PathLayer -> listOf(
+            editor.selected is PathLayer -> (if (editor.canEditPoints(editor.selected)) listOf(
+                toolButton("pedit", R.drawable.ic_polyline, R.string.bz_edit_points) { editPathPoints() }
+            ) else emptyList()) + listOf(
                 panelTool("pcolor", R.drawable.ic_palette, R.string.t_color),
                 panelTool("pwidth", R.drawable.ic_line_weight, R.string.t_thickness)
             ) + arrange + common + tail
@@ -392,7 +397,7 @@ class MainActivity : Activity(), EditorView.Listener {
                 toolButton("addimg", R.drawable.ic_add_photo_alternate, R.string.t_add_image) { pick(REQ_ADD_IMAGE) },
                 panelTool("shapes", R.drawable.ic_category, R.string.t_shapes),
                 toolButton("draw", R.drawable.ic_brush, R.string.t_draw) { startDraw(false) },
-                toolButton("vector", R.drawable.ic_polyline, R.string.t_vector) { startDraw(true) },
+                toolButton("vector", R.drawable.ic_bezier, R.string.t_vector) { startDraw(true) },
                 panelTool("stickers", R.drawable.ic_emoji_emotions, R.string.t_stickers),
                 toolButton("photo", R.drawable.ic_wallpaper, R.string.t_photo) { pick(REQ_BG_IMAGE) },
                 panelTool("bgcolor", R.drawable.ic_format_color_fill, R.string.t_bg_color),
@@ -996,6 +1001,50 @@ class MainActivity : Activity(), EditorView.Listener {
                 }
             }
 
+            "paper" -> if (im != null) {
+                box.addView(chipRow(listOf(getString(R.string.pp_none), getString(R.string.pp_torn), getString(R.string.pp_curl)), im.edge) { i ->
+                    ui { it.edge = i }
+                    openPanel("paper")
+                })
+                when (im.edge) {
+                    ImageLayer.EDGE_TORN -> {
+                        box.addView(label(R.string.pp_sides))
+                        val bits = intArrayOf(ImageLayer.SIDE_TOP, ImageLayer.SIDE_RIGHT, ImageLayer.SIDE_BOTTOM, ImageLayer.SIDE_LEFT)
+                        val names = listOf(R.string.p_top, R.string.p_right, R.string.p_bottom, R.string.p_left).mapIndexed { i, r ->
+                            (if (im.tornSides and bits[i] != 0) "✓ " else "") + getString(r)
+                        }
+                        box.addView(chipRow(names) { i ->
+                            ui { l ->
+                                val n = l.tornSides xor bits[i]
+                                if (n != 0) l.tornSides = n
+                            }
+                            openPanel("paper")
+                        })
+                        box.addView(slider(R.string.pp_depth, 0, 100, im.tornDepth.roundToInt(), { "$it" }) { v ->
+                            ui(false) { it.tornDepth = v.toFloat() }
+                        })
+                        box.addView(slider(R.string.pp_rim, 0, 60, im.tornRim.roundToInt(), { "$it" }) { v ->
+                            ui(false) { it.tornRim = v.toFloat() }
+                        })
+                        box.addView(chipRow(listOf(getString(R.string.pp_new_tear))) { ui { it.tornSeed = (1..99999).random() } })
+                    }
+                    ImageLayer.EDGE_CURL -> {
+                        box.addView(label(R.string.pp_corner))
+                        box.addView(chipRow(listOf("↖", "↗", "↘", "↙"), im.curlCorner) { i ->
+                            ui { it.curlCorner = i }
+                            openPanel("paper")
+                        })
+                        box.addView(slider(R.string.pp_curl_size, 5, 70, im.curlSize.roundToInt(), { "$it%" }) { v ->
+                            ui(false) { it.curlSize = v.toFloat() }
+                        })
+                    }
+                }
+                if (im.edge != ImageLayer.EDGE_NONE) {
+                    box.addView(label(R.string.pp_paper_color))
+                    box.addView(swatchRow(im.paperColor, false) { c -> ui { it.paperColor = c } })
+                }
+            }
+
             "imgshadow" -> if (im != null) {
                 box.addView(slider(R.string.p_blur, 0, 80, im.shadowRadius.roundToInt(), { "$it" }) { v ->
                     ui(false) { it.shadowRadius = v.toFloat() }
@@ -1510,43 +1559,20 @@ class MainActivity : Activity(), EditorView.Listener {
             box.addView(label(R.string.draw_start_hint))
             return
         }
-        fun live(block: (Stroke) -> Unit) {
-            if (d.vector) d.current?.let(block)
-            editor.invalidate()
-        }
         if (vector) {
-            box.addView(label(R.string.vector_hint))
-            box.addView(chipRow(listOf(getString(R.string.p_open_line), getString(R.string.p_closed_shape)), if (d.closed) 1 else 0) { i ->
-                d.closed = i == 1
-                live { it.closed = d.closed }
-                openPanel("vector")
-            })
-        } else {
-            box.addView(label(R.string.p_brush))
-            val names = listOf(R.string.b_pen, R.string.b_marker, R.string.b_neon, R.string.b_dash, R.string.b_spray, R.string.b_calligraphy).map { getString(it) }
-            box.addView(chipRow(names, d.brush) { i ->
-                d.brush = i
-                openPanel("draw")
-            })
+            buildBezierPanel(box, d)
+            return
         }
+        box.addView(label(R.string.p_brush))
+        val names = listOf(R.string.b_pen, R.string.b_marker, R.string.b_neon, R.string.b_dash, R.string.b_spray, R.string.b_calligraphy).map { getString(it) }
+        box.addView(chipRow(names, d.brush) { i ->
+            d.brush = i
+            openPanel("draw")
+        })
         val mx = (max(editor.doc.width, editor.doc.height) * 0.06f).roundToInt().coerceAtLeast(20)
-        box.addView(slider(R.string.p_width, 1, mx, d.width.roundToInt(), { "$it" }) { v ->
-            d.width = v.toFloat()
-            live { it.width = d.width }
-        })
+        box.addView(slider(R.string.p_width, 1, mx, d.width.roundToInt(), { "$it" }) { v -> d.width = v.toFloat() })
         box.addView(label(R.string.t_color))
-        box.addView(swatchRow(d.color, false) { c ->
-            d.color = c
-            live { it.color = c }
-        })
-        if (vector) {
-            box.addView(label(R.string.p_fill))
-            box.addView(swatchRow(d.fill, true) { c ->
-                d.fill = c
-                live { it.fill = c }
-                openPanel("vector")
-            })
-        }
+        box.addView(swatchRow(d.color, false) { c -> d.color = c })
         box.addView(chipRow(listOf(getString(R.string.t_done), getString(R.string.undo), getString(R.string.cancel))) { i ->
             when (i) {
                 0 -> { editor.finishDrawing(true); closePanel() }
@@ -1554,6 +1580,107 @@ class MainActivity : Activity(), EditorView.Listener {
                 2 -> { editor.finishDrawing(false); closePanel() }
             }
         })
+    }
+
+    /** The bezier pen panel, like PixelLab: lines, mode, point actions, then the look of the line. */
+    private fun buildBezierPanel(box: LinearLayout, d: DrawSession) {
+        fun refresh() { editor.drawingChanged(); openPanel("vector") }
+        fun style() { d.applyStyle(); editor.drawingChanged() }
+
+        // ---- lines: new, previous, number, copy, next, delete ----
+        val num = if (d.path == null) "${d.pathCount + 1}" else "${d.index + 1}/${d.pathCount}"
+        box.addView(chipRow(listOf("＋", "‹", num, "⧉", "›", "－")) { i ->
+            when (i) {
+                0 -> d.newPath()
+                1 -> d.prevPath()
+                3 -> d.duplicatePath(max(editor.doc.width, editor.doc.height) * 0.03f)
+                4 -> d.nextPath()
+                5 -> d.deletePath()
+            }
+            refresh()
+        })
+
+        box.addView(label(R.string.bz_mode))
+        box.addView(chipRow(listOf(getString(R.string.bz_add), getString(R.string.bz_curve), getString(R.string.bz_move)), d.bezMode) { i ->
+            d.bezMode = i
+            refresh()
+        })
+        box.addView(TextView(this).apply {
+            setText(when (d.bezMode) {
+                DrawSession.MODE_ADD -> R.string.bz_hint_add
+                DrawSession.MODE_CURVE -> R.string.bz_hint_curve
+                else -> R.string.bz_hint_move
+            })
+            textSize = 12.5f
+            setTextColor(textDim)
+        })
+
+        box.addView(label(R.string.bz_actions))
+        box.addView(chipRow(listOf(
+            getString(R.string.bz_del_point), getString(R.string.bz_smooth), getString(R.string.bz_straight),
+            getString(if (d.closed) R.string.p_open_line else R.string.p_closed_shape)
+        )) { i ->
+            when (i) {
+                0 -> d.deletePoint()
+                1 -> d.smoothAll()
+                2 -> d.straightAll()
+                3 -> d.toggleClosed()
+            }
+            refresh()
+        })
+
+        val mx = (max(editor.doc.width, editor.doc.height) * 0.06f).roundToInt().coerceAtLeast(20)
+        box.addView(slider(R.string.p_width, 0, mx, d.width.roundToInt(), { "$it" }) { v ->
+            d.width = v.toFloat(); style()
+        })
+        box.addView(chipRow(listOf(getString(R.string.bz_cap_round), getString(R.string.bz_cap_flat), getString(R.string.bz_cap_square)), d.cap) { i ->
+            d.cap = i; style(); openPanel("vector")
+        })
+        box.addView(slider(R.string.t_opacity, 0, 100, (d.opacity * 100f / 255f).roundToInt(), { "$it%" }) { v ->
+            d.opacity = (v * 255f / 100f).roundToInt(); style()
+        })
+
+        box.addView(label(R.string.bz_stroke_color))
+        box.addView(chipRow(listOf(getString(R.string.p_solid), getString(R.string.p_gradient)), if (d.grad != 0) 1 else 0) { i ->
+            d.grad = if (i == 1) (if (d.grad != 0) d.grad else 0xFF1E88E5.toInt()) else 0
+            style(); openPanel("vector")
+        })
+        if (d.grad != 0) box.addView(label(R.string.p_color1))
+        box.addView(swatchRow(d.color, false) { c -> d.color = c; style() })
+        if (d.grad != 0) {
+            box.addView(label(R.string.p_color2))
+            box.addView(swatchRow(d.grad, false) { c -> d.grad = c or 0xFF000000.toInt(); style() })
+        }
+        box.addView(label(R.string.p_fill))
+        box.addView(swatchRow(d.fill, true) { c -> d.fill = c; style() })
+
+        box.addView(chipRow(listOf(getString(R.string.t_done), getString(R.string.undo), getString(R.string.cancel))) { i ->
+            when (i) {
+                0 -> { editor.finishDrawing(true); closePanel() }
+                1 -> { editor.undoDrawStep(); openPanel("vector") }
+                2 -> { editor.finishDrawing(false); closePanel() }
+            }
+        })
+    }
+
+    /** Opens the background remover for the selected picture. */
+    private fun openBgRemover() {
+        val b = si?.bitmap ?: return
+        if (b.isRecycled) return
+        BgHolder.input = b
+        BgHolder.output = null
+        @Suppress("DEPRECATION")
+        startActivityForResult(Intent(this, BgRemoveActivity::class.java), REQ_BG_REMOVE)
+    }
+
+    private fun editPathPoints() {
+        val l = sp ?: return
+        if (editor.editPoints(l) == null) {
+            toast(R.string.bz_cant_edit)
+            return
+        }
+        hideLayers()
+        openPanel("vector")
     }
 
     // ================= layers list =================
@@ -2004,6 +2131,14 @@ class MainActivity : Activity(), EditorView.Listener {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_BG_REMOVE) {
+            val out = BgHolder.output
+            BgHolder.output = null
+            if (resultCode == RESULT_OK && out != null) {
+                if (si != null) ui { it.bitmap = out } else editor.addImage(out)
+            }
+            return
+        }
         if (resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         when (requestCode) {

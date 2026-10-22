@@ -11,8 +11,8 @@ android {
         applicationId = "com.ghoragraphics.nawakhtgar"
         minSdk = 24
         targetSdk = 34
-        versionCode = 9
-        versionName = "2.6"
+        versionCode = 10
+        versionName = "2.7"
     }
 
     // One fixed key, so every new APK installs over the old one (projects are kept)
@@ -46,7 +46,8 @@ android {
     }
 }
 
-// No external libraries: the app uses only the Android framework,
-// which keeps the APK small and the GitHub build fast.
+// Only one library: Google's on-phone AI that finds the person / object in a photo
+// (background removal). Its model is downloaded by Google Play services, so the APK stays small.
 dependencies {
+    implementation("com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1")
 }

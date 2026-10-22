@@ -197,7 +197,7 @@
     <string name="layers_empty">لا څه نشته. متن، عکس یا شکل زیات کړئ.</string>
     <string name="t_shapes">شکلونه</string>
     <string name="t_draw">رسامي</string>
-    <string name="t_vector">وکټور قلم</string>
+    <string name="t_vector">بېزیر</string>
     <string name="t_stickers">سټیکرونه</string>
     <string name="t_fill">ډکول</string>
     <string name="t_shape_form">بڼه</string>
@@ -276,4 +276,52 @@
     <string name="tg_ghora">غوره ګرافیکس پروډکشن ټلګرام</string>
     <string name="ab_feedback_t">نظر او وړاندیز</string>
     <string name="ab_test_text">دا د نوښتګر ازمېښتي نسخه ده او لس ورځې کار کوي. اصلي او رسمي نسخه به ډېر ژر په Play Store کې خپره شي؛ لینک به یې زموږ په ټلګرام چینل کې درکړو.</string>
+
+    <!-- bezier pen -->
+    <string name="bz_mode">د بېزیر حالت</string>
+    <string name="bz_add">ټکي زیاتول</string>
+    <string name="bz_curve">کږول</string>
+    <string name="bz_move">ښورول</string>
+    <string name="bz_hint_add">پر پاڼه کېکاږئ چې نوی ټکی زیات شي؛ ټکی کش کړئ چې ځای یې بدل شي</string>
+    <string name="bz_hint_curve">ټکی کش کړئ چې لاستي یې راووځي؛ آبي لاستي یا د ټوټې منځنۍ نښه کش کړئ چې کرښه کږه شي</string>
+    <string name="bz_hint_move">ګوته کش کړئ چې ټوله کرښه بل ځای ته ولاړه شي</string>
+    <string name="bz_actions">کارونه</string>
+    <string name="bz_del_point">ټکی ړنګول</string>
+    <string name="bz_smooth">نرمول</string>
+    <string name="bz_straight">سیده کول</string>
+    <string name="bz_cap_round">ګرده څوکه</string>
+    <string name="bz_cap_flat">سیده څوکه</string>
+    <string name="bz_cap_square">څلورکنجه څوکه</string>
+    <string name="bz_stroke_color">د کرښې رنګ</string>
+    <string name="bz_edit_points">ټکي سمول</string>
+    <string name="bz_cant_edit">دا کرښه په لاس رسم شوې؛ یوازې د بېزیر کرښې سمېدای شي</string>
+
+    <!-- background removal -->
+    <string name="t_remove_bg">شالید لرې کول</string>
+    <string name="bg_auto">اتوماتیک (AI)</string>
+    <string name="bg_magic">جادويي</string>
+    <string name="bg_erase">پاکول</string>
+    <string name="bg_restore">بېرته راوړل</string>
+    <string name="bg_hint_magic">پر هغه رنګ کېکاږئ چې لرې کېږي؛ ورته رنګونه چې ورسره نښتي دي هم لرې کېږي. دوه ګوتې: لویول او ښورول</string>
+    <string name="bg_hint_erase">په ګوته یې پاک کړئ. دوه ګوتې: لویول او ښورول</string>
+    <string name="bg_hint_restore">چې کوم ځای مو په غلطۍ پاک کړی، په ګوته یې بېرته راوړئ</string>
+    <string name="bg_tolerance">ورته والی</string>
+    <string name="bg_brush">د قلم اندازه</string>
+    <string name="bg_working">شالید لټول کېږي…</string>
+    <string name="bg_auto_done">شالید لرې شو؛ که څه پاتې وي په پاکولو یې سم کړئ</string>
+    <string name="bg_nothing">په عکس کې کوم انسان یا شی ونه موندل شو</string>
+    <string name="bg_auto_fail">اتوماتیک لرې کول اوس ونه شول. انټرنېټ روښانه کړئ او یوه دقیقه وروسته بیا هڅه وکړئ (لومړی ځل Google Play services یې ښکته کوي). تر هغه جادويي یا پاکول وکاروئ.</string>
+
+    <!-- paper effects -->
+    <string name="t_paper">پاڼه څیرل</string>
+    <string name="pp_none">هیڅ</string>
+    <string name="pp_torn">څیرې پاڼه</string>
+    <string name="pp_curl">قات کونج</string>
+    <string name="pp_sides">کومې غاړې څیرې شي</string>
+    <string name="pp_depth">د څیرې ژوروالی</string>
+    <string name="pp_rim">سپینه څنډه</string>
+    <string name="pp_new_tear">بله څیره</string>
+    <string name="pp_corner">کوم کونج</string>
+    <string name="pp_curl_size">د قات اندازه</string>
+    <string name="pp_paper_color">د پاڼې رنګ</string>
 </resources>

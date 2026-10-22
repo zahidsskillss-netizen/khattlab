@@ -39,20 +39,6 @@ class EditorView @JvmOverloads constructor(
         fun onDrawChanged() {}
     }
 
-    /** Hand drawing (vector = false) or the vector pen (vector = true) in progress. */
-    class DrawSession(val vector: Boolean) {
-        val strokes = mutableListOf<Stroke>()
-        var current: Stroke? = null
-        var color = Color.BLACK
-        var width = 12f
-        var brush = Stroke.BRUSH_PEN
-        var closed = false
-        var fill = Color.TRANSPARENT
-
-        fun newStroke(x: Float, y: Float) =
-            Stroke(floatArrayOf(x, y), color, width, brush, vector, closed, fill)
-    }
-
     var drawing: DrawSession? = null
         private set
 
@@ -401,40 +387,104 @@ class EditorView @JvmOverloads constructor(
     fun startDrawing(vector: Boolean): DrawSession {
         select(null)
         val d = DrawSession(vector)
-        d.width = max(doc.width, doc.height) * 0.012f
+        d.width = max(doc.width, doc.height) * (if (vector) 0.006f else 0.012f)
         d.color = if (Color.luminance(doc.color) > 0.5f && doc.bitmap == null) Color.BLACK else Color.WHITE
         drawing = d
         invalidate()
         return d
     }
 
-    /** Removes the last line (hand drawing) or the last point (vector pen). */
+    /** Can [l] be opened again in the bezier pen? (lines made with the vector / bezier pen) */
+    fun canEditPoints(l: Layer?): Boolean = l is PathLayer && l.strokes.isNotEmpty() && l.strokes.all { it.smooth }
+
+    /** Takes a pen layer off the page and opens its points in the bezier pen. */
+    fun editPoints(l: PathLayer): DrawSession? {
+        if (!canEditPoints(l) || l.locked) return null
+        val at = layers.indexOf(l)
+        if (at < 0) return null
+        commit()
+        layers.removeAt(at)
+        select(null)
+        val d = DrawSession(true)
+        d.editing = l
+        d.editingAt = at
+        val a = Math.toRadians(l.rotation.toDouble())
+        val cos = Math.cos(a).toFloat()
+        val sin = Math.sin(a).toFloat()
+        val k = l.scale
+        val bx = l.bw / 2f
+        val by = l.bh / 2f
+        for (st in l.strokes) {
+            val c = st.copy()
+            if (c.ctrl == null) {
+                // older smooth line: give it handles that draw the same curve
+                d.paths.add(c); d.index = d.paths.size - 1
+                c.ctrl = FloatArray(c.pts.size * 2)
+                d.smoothAll()
+            }
+            for (i in 0 until c.pts.size / 2) {
+                val lx = (c.pts[2 * i] - bx) * k
+                val ly = (c.pts[2 * i + 1] - by) * k
+                c.pts[2 * i] = l.x + lx * cos - ly * sin
+                c.pts[2 * i + 1] = l.y + lx * sin + ly * cos
+            }
+            c.ctrl?.let { h ->
+                for (i in 0 until h.size / 2) {
+                    val hx = h[2 * i] * k
+                    val hy = h[2 * i + 1] * k
+                    h[2 * i] = hx * cos - hy * sin
+                    h[2 * i + 1] = hx * sin + hy * cos
+                }
+            }
+            c.width *= k
+            if (!d.paths.contains(c)) d.paths.add(c)
+        }
+        d.index = 0
+        d.clearHistory()
+        d.loadStyle()
+        d.bezMode = DrawSession.MODE_CURVE
+        drawing = d
+        invalidate()
+        return d
+    }
+
+    /** One step back inside the drawing. */
     fun undoDrawStep() {
         val d = drawing ?: return
-        if (d.vector) {
-            val c = d.current ?: return
-            if (c.pts.size <= 2) d.current = null else c.pts = c.pts.copyOf(c.pts.size - 2)
-        } else if (d.strokes.isNotEmpty()) {
-            d.strokes.removeAt(d.strokes.size - 1)
+        if (d.stepBack()) {
+            d.loadStyle()
+            listener?.onDrawChanged()
+            invalidate()
         }
-        listener?.onDrawChanged()
-        invalidate()
     }
 
     /** Ends drawing; keep = true turns what was drawn into a layer. */
     fun finishDrawing(keep: Boolean) {
         val d = drawing ?: return
         drawing = null
-        val list = d.strokes.toMutableList()
-        d.current?.let { if (d.vector && it.pts.size >= 4) list.add(it) }
-        if (keep) {
-            val l = PathLayer.fromPageStrokes(list)
-            if (l != null) {
-                commit()
-                layers.add(l)
-                select(l)
+        val list = if (d.vector) d.finishedPaths().toMutableList() else d.strokes.toMutableList()
+        val l = if (keep) PathLayer.fromPageStrokes(list) else null
+        val old = d.editing
+        if (l != null) {
+            if (old != null) {
+                l.opacity = old.opacity
+                l.reflectSize = old.reflectSize; l.reflectGap = old.reflectGap; l.reflectAlpha = old.reflectAlpha
             }
+            if (old == null) commit()
+            if (old != null && d.editingAt in 0..layers.size) layers.add(d.editingAt, l) else layers.add(l)
+            listener?.onHistoryChanged()
+            select(l)
+        } else if (old != null && (!keep || list.isEmpty())) {
+            // cancelled (or nothing left): the layer comes back as it was
+            if (!keep) layers.add(d.editingAt.coerceIn(0, layers.size), old)
+            listener?.onHistoryChanged()
         }
+        invalidate()
+    }
+
+    /** Something in the bezier panel changed the line: redraw. */
+    fun drawingChanged() {
+        listener?.onDrawChanged()
         invalidate()
     }
 
@@ -514,8 +564,12 @@ class EditorView @JvmOverloads constructor(
         canvas.clipRect(0f, 0f, doc.width.toFloat(), doc.height.toFloat())
         drawDoc(canvas)
         drawing?.let { d ->
-            for (st in d.strokes) Stroke.draw(canvas, st, penPaint)
-            d.current?.let { Stroke.draw(canvas, it, penPaint) }
+            if (d.vector) {
+                for (st in d.paths) Stroke.draw(canvas, st, penPaint)
+            } else {
+                for (st in d.strokes) Stroke.draw(canvas, st, penPaint)
+                d.current?.let { Stroke.draw(canvas, it, penPaint) }
+            }
         }
         canvas.restore()
 
@@ -534,21 +588,8 @@ class EditorView @JvmOverloads constructor(
         }
 
         drawing?.let { d ->
-            // points of the vector pen
-            val c = d.current ?: return
-            if (!d.vector) return
-            val p = c.pts
-            for (i in 0 until p.size / 2) {
-                val vx = offX + p[2 * i] * fit
-                val vy = offY + p[2 * i + 1] * fit
-                pointPaint.style = Paint.Style.FILL
-                pointPaint.color = if (i == 0) gold else Color.WHITE
-                canvas.drawCircle(vx, vy, 8f * density, pointPaint)
-                pointPaint.style = Paint.Style.STROKE
-                pointPaint.strokeWidth = 2f * density
-                pointPaint.color = 0xFF1E88E5.toInt()
-                canvas.drawCircle(vx, vy, 8f * density, pointPaint)
-            }
+            // points and handles of the bezier pen
+            if (d.vector) d.drawOverlay(canvas, offX, offY, fit, density)
             return
         }
 
@@ -713,40 +754,24 @@ class EditorView @JvmOverloads constructor(
             invalidate()
             return true
         }
-        // vector pen: tap adds a point, drag moves the nearest point
+        // bezier pen
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downVX = e.x; downVY = e.y; moved = false
-                dragPoint = -1
-                val c = d.current
-                if (c != null) {
-                    var best = 22f * density
-                    for (i in 0 until c.pts.size / 2) {
-                        val dd = hypot(offX + c.pts[2 * i] * fit - e.x, offY + c.pts[2 * i + 1] * fit - e.y)
-                        if (dd < best) { best = dd; dragPoint = i }
-                    }
-                }
+                d.bezDown(x, y, 24f * density / fit)
             }
             MotionEvent.ACTION_MOVE -> {
                 if (!moved && hypot(e.x - downVX, e.y - downVY) < touchSlop) return true
                 moved = true
-                val c = d.current
-                if (dragPoint >= 0 && c != null) {
-                    c.pts[2 * dragPoint] = x
-                    c.pts[2 * dragPoint + 1] = y
-                    invalidate()
-                }
+                if (d.bezMove(x, y)) invalidate()
             }
             MotionEvent.ACTION_UP -> {
-                if (!moved && dragPoint < 0) {
-                    val c = d.current
-                    if (c == null) d.current = d.newStroke(x, y)
-                    else c.pts = c.pts.copyOf(c.pts.size + 2).also { it[c.pts.size] = x; it[c.pts.size + 1] = y }
-                    listener?.onDrawChanged()
-                    invalidate()
-                }
-                dragPoint = -1
+                val changed = if (!moved) d.bezTap(x, y) else d.bezUp()
+                if (!moved) d.bezUp()
+                if (changed) listener?.onDrawChanged()
+                invalidate()
             }
+            MotionEvent.ACTION_CANCEL -> { d.bezUp(); invalidate() }
         }
         return true
     }
