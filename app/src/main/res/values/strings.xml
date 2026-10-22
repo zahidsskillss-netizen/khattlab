@@ -123,6 +123,8 @@
     <string name="p_reset">بېرته اصلي</string>
     <string name="p_reflect_size">اندازه</string>
     <string name="p_round">ګردوالی</string>
+    <string name="t_outline">جلا څنډه</string>
+    <string name="p_outline_hint">واټن: مثبت = بهر، منفي = دننه</string>
     <string name="p_round_all">ټول کونجونه</string>
     <string name="p_round_each">هر کونج جلا:</string>
     <string name="p_corner_tl">پورته کیڼ</string>

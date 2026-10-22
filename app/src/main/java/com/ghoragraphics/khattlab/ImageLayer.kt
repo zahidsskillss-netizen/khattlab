@@ -33,6 +33,14 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
     private val roundPath = android.graphics.Path()
     var borderWidth = 0f
     var borderColor = Color.WHITE
+    // a second line around the picture at a distance (gap > 0 outside, gap < 0 inside), in page pixels
+    var outlineWidth = 0f
+    var outlineGap = 18f
+    var outlineColor = Color.WHITE
+    var outlineDashed = false
+    private val outlinePath = android.graphics.Path()
+    private val orr = FloatArray(8)
+
     var shadowRadius = 0f
     var shadowDx = 0f
     var shadowDy = 0f
@@ -60,6 +68,7 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
         c.flipH = flipH; c.flipV = flipV; c.round = round
         radii.copyInto(c.radii)
         c.borderWidth = borderWidth; c.borderColor = borderColor
+        c.outlineWidth = outlineWidth; c.outlineGap = outlineGap; c.outlineColor = outlineColor; c.outlineDashed = outlineDashed
         c.shadowRadius = shadowRadius; c.shadowDx = shadowDx; c.shadowDy = shadowDy; c.shadowColor = shadowColor
         return c
     }
@@ -70,6 +79,8 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
         put("flipH", flipH); put("flipV", flipV); put("round", round.toDouble())
         put("radii", org.json.JSONArray().apply { radii.forEach { put(it.toDouble()) } })
         put("borderWidth", borderWidth.toDouble()); put("borderColor", borderColor)
+        put("outlineWidth", outlineWidth.toDouble()); put("outlineGap", outlineGap.toDouble())
+        put("outlineColor", outlineColor); put("outlineDashed", outlineDashed)
         put("shadowRadius", shadowRadius.toDouble()); put("shadowDx", shadowDx.toDouble()); put("shadowDy", shadowDy.toDouble())
         put("shadowColor", shadowColor)
         putBase(this)
@@ -83,6 +94,8 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
             val ra = j.optJSONArray("radii")
             for (i in 0 until 4) l.radii[i] = ra?.optDouble(i, l.round.toDouble())?.toFloat() ?: l.round
             l.borderWidth = f("borderWidth", 0f); l.borderColor = j.optInt("borderColor", Color.WHITE)
+            l.outlineWidth = f("outlineWidth", 0f); l.outlineGap = f("outlineGap", 18f)
+            l.outlineColor = j.optInt("outlineColor", Color.WHITE); l.outlineDashed = j.optBoolean("outlineDashed", false)
             l.shadowRadius = f("shadowRadius", 0f); l.shadowDx = f("shadowDx", 0f); l.shadowDy = f("shadowDy", 0f)
             l.shadowColor = j.optInt("shadowColor", 0x99000000.toInt())
             l.readBase(j)
@@ -100,7 +113,10 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
         cH = bitmap.height.toFloat()
     }
 
-    override fun padding(): Float = borderWidth / 2f / max(scale, 0.01f) + 4f
+    override fun padding(): Float {
+        val out = if (outlineWidth > 0f) max(0f, outlineGap + outlineWidth / 2f) else 0f
+        return max(borderWidth / 2f, out) / max(scale, 0.01f) + 4f
+    }
 
     override fun drawLocal(canvas: Canvas, fm: FontManager) {
         prepare(fm)
@@ -151,6 +167,20 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
             borderPaint.color = borderColor
             borderPaint.strokeWidth = borderWidth * inv
             canvas.drawPath(roundPath, borderPaint)
+        }
+
+        if (outlineWidth > 0f) {
+            val g = max(outlineGap * inv, -min(cW, cH) / 2f + 1f)
+            for (i in 0 until 8) orr[i] = if (rr[i] > 0f) max(0f, rr[i] + g) else 0f
+            outlinePath.reset()
+            outlinePath.addRoundRect(RectF(-g, -g, cW + g, cH + g), orr, android.graphics.Path.Direction.CW)
+            borderPaint.style = Paint.Style.STROKE
+            borderPaint.color = outlineColor
+            borderPaint.strokeWidth = outlineWidth * inv
+            borderPaint.strokeCap = Paint.Cap.ROUND
+            if (outlineDashed) borderPaint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(outlineWidth * inv * 2.5f, outlineWidth * inv * 1.8f), 0f)
+            canvas.drawPath(outlinePath, borderPaint)
+            borderPaint.pathEffect = null
         }
         canvas.restore()
     }

@@ -57,6 +57,8 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
             l.points = j.optInt("points", 5); l.inner = f("inner", 45f)
             l.shadowRadius = f("shadowRadius", 0f); l.shadowDx = f("shadowDx", 0f); l.shadowDy = f("shadowDy", 0f)
             l.shadowColor = j.optInt("shadowColor", l.shadowColor)
+            l.outlineWidth = f("outlineWidth", 0f); l.outlineGap = f("outlineGap", 18f)
+            l.outlineColor = j.optInt("outlineColor", Color.WHITE); l.outlineDashed = j.optBoolean("outlineDashed", false)
             l.image = image
             l.imgScale = f("imgScale", 1f); l.imgX = f("imgX", 0f); l.imgY = f("imgY", 0f)
             l.readBase(j)
@@ -106,6 +108,12 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
     var points = 5                   // star / polygon / burst
     var inner = 45f                  // 10..90, inner size of star / ring
 
+    // a second line that follows the shape at a distance (gap > 0 outside, gap < 0 inside)
+    var outlineWidth = 0f
+    var outlineGap = 18f
+    var outlineColor = Color.WHITE
+    var outlineDashed = false
+
     var shadowRadius = 0f
     var shadowDx = 0f
     var shadowDy = 0f
@@ -133,6 +141,7 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
         c.strokeWidth = strokeWidth; c.strokeColor = strokeColor; c.dashed = dashed
         c.corner = corner; c.points = points; c.inner = inner
         radii.copyInto(c.radii)
+        c.outlineWidth = outlineWidth; c.outlineGap = outlineGap; c.outlineColor = outlineColor; c.outlineDashed = outlineDashed
         c.shadowRadius = shadowRadius; c.shadowDx = shadowDx; c.shadowDy = shadowDy; c.shadowColor = shadowColor
         c.image = image; c.imgScale = imgScale; c.imgX = imgX; c.imgY = imgY
         return c
@@ -148,6 +157,8 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
         put("corner", corner.toDouble()); put("points", points); put("inner", inner.toDouble())
         put("shadowRadius", shadowRadius.toDouble()); put("shadowDx", shadowDx.toDouble()); put("shadowDy", shadowDy.toDouble())
         put("shadowColor", shadowColor)
+        put("outlineWidth", outlineWidth.toDouble()); put("outlineGap", outlineGap.toDouble())
+        put("outlineColor", outlineColor); put("outlineDashed", outlineDashed)
         put("imgScale", imgScale.toDouble()); put("imgX", imgX.toDouble()); put("imgY", imgY.toDouble())
         putBase(this)
     }
@@ -156,6 +167,7 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
         super.rescale(k)
         w *= k; h *= k
         strokeWidth *= k
+        outlineWidth *= k; outlineGap *= k
         shadowRadius *= k; shadowDx *= k; shadowDy *= k
     }
 
@@ -164,7 +176,32 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
         cH = max(h, 4f)
     }
 
-    override fun padding(): Float = strokeWidth / 2f + 6f
+    override fun padding(): Float {
+        val out = if (outlineWidth > 0f && !isLine(kind)) max(0f, outlineGap + outlineWidth / 2f) else 0f
+        return max(strokeWidth / 2f, out) + 6f
+    }
+
+    private val outlinePath = Path()
+    private val outlineMatrix = Matrix()
+
+    /** The shape's outline moved [g] pixels out (or in, when negative). */
+    private fun buildOutline(g0: Float) {
+        outlinePath.reset()
+        val g = max(g0, -min(cW, cH) / 2f + 1f)
+        if (kind == RECT || kind == ROUND_RECT) {
+            val maxR = min(cW, cH) / 2f
+            for (i in 0 until 4) {
+                val r0 = if (kind == RECT) 0f else maxR * radii[i].coerceIn(0f, 100f) / 100f
+                val r = if (r0 > 0f) max(0f, r0 + g) else 0f
+                rr[2 * i] = r; rr[2 * i + 1] = r
+            }
+            outlinePath.addRoundRect(RectF(-g, -g, cW + g, cH + g), rr, Path.Direction.CW)
+            return
+        }
+        // other shapes: grow the outline around the middle so its box is g bigger on every side
+        outlineMatrix.setScale((cW + 2f * g) / cW, (cH + 2f * g) / cH, cW / 2f, cH / 2f)
+        path.transform(outlineMatrix, outlinePath)
+    }
 
     /** Builds the outline of the shape inside 0..cW, 0..cH. */
     private fun buildPath() {
@@ -333,6 +370,19 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
             if (wantShadow && fillMode == 2) paint.setShadowLayer(max(shadowRadius, 0.5f), shadowDx, shadowDy, shadowColor)
             canvas.drawPath(path, paint)
             paint.clearShadowLayer()
+            paint.pathEffect = null
+        }
+        if (outlineWidth > 0f) {
+            buildOutline(outlineGap)
+            paint.reset()
+            paint.isAntiAlias = true
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = outlineWidth
+            paint.strokeJoin = Paint.Join.ROUND
+            paint.strokeCap = Paint.Cap.ROUND
+            paint.color = outlineColor
+            if (outlineDashed) paint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(outlineWidth * 2.5f, outlineWidth * 1.8f), 0f)
+            canvas.drawPath(outlinePath, paint)
             paint.pathEffect = null
         }
     }

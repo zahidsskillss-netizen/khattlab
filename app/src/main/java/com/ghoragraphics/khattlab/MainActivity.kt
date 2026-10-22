@@ -71,8 +71,8 @@ class MainActivity : Activity(), EditorView.Listener {
             "styles", "font", "style", "color", "texture", "curve", "background", "align", "spacing",
             "stroke", "shadow", "inner", "emboss", "depth", "floor"
         )
-        private val IMAGE_PANELS = COMMON_PANELS + setOf("flip", "round", "border", "imgshadow")
-        private val SHAPE_PANELS = COMMON_PANELS + setOf("sfill", "sstroke", "sform", "sshadow", "simage")
+        private val IMAGE_PANELS = COMMON_PANELS + setOf("flip", "round", "border", "outline", "imgshadow")
+        private val SHAPE_PANELS = COMMON_PANELS + setOf("sfill", "sstroke", "outline", "sform", "sshadow", "simage")
         private val PATH_PANELS = COMMON_PANELS + setOf("pcolor", "pwidth")
 
         private val STICKERS = (
@@ -347,6 +347,7 @@ class MainActivity : Activity(), EditorView.Listener {
                 panelTool("flip", R.drawable.ic_flip, R.string.t_flip),
                 panelTool("round", R.drawable.ic_rounded_corner, R.string.t_round),
                 panelTool("border", R.drawable.ic_border_outer, R.string.t_border),
+                panelTool("outline", R.drawable.ic_polyline, R.string.t_outline),
                 panelTool("imgshadow", R.drawable.ic_filter_none, R.string.t_shadow)
             ) + tail
             editor.selected is ShapeLayer -> listOf(
@@ -355,6 +356,7 @@ class MainActivity : Activity(), EditorView.Listener {
                 },
                 panelTool("sfill", R.drawable.ic_format_color_fill, R.string.t_fill),
                 panelTool("sstroke", R.drawable.ic_border_color, R.string.t_stroke),
+                panelTool("outline", R.drawable.ic_border_outer, R.string.t_outline),
                 panelTool("sform", R.drawable.ic_tune, R.string.t_shape_form),
                 panelTool("sshadow", R.drawable.ic_filter_none, R.string.t_shadow)
             ) + arrange + common + tail
@@ -942,6 +944,34 @@ class MainActivity : Activity(), EditorView.Listener {
                     }
                     openPanel("border")
                 })
+            }
+
+            "outline" -> {
+                val sh = ss
+                val ol: Layer? = sh ?: im
+                if (ol != null) {
+                    fun get(): FloatArray = if (sh != null) floatArrayOf(sh.outlineWidth, sh.outlineGap) else floatArrayOf(im!!.outlineWidth, im.outlineGap)
+                    val color = sh?.outlineColor ?: im!!.outlineColor
+                    val dashed = sh?.outlineDashed ?: im!!.outlineDashed
+                    fun set(commit: Boolean, w: Float? = null, g: Float? = null, c: Int? = null, d: Boolean? = null) =
+                        editor.update(commit) { l ->
+                            when (l) {
+                                is ShapeLayer -> { w?.let { l.outlineWidth = it }; g?.let { l.outlineGap = it }; c?.let { l.outlineColor = it }; d?.let { l.outlineDashed = it }
+                                    if (c != null && l.outlineWidth <= 0f) l.outlineWidth = 6f }
+                                is ImageLayer -> { w?.let { l.outlineWidth = it }; g?.let { l.outlineGap = it }; c?.let { l.outlineColor = it }; d?.let { l.outlineDashed = it }
+                                    if (c != null && l.outlineWidth <= 0f) l.outlineWidth = 6f }
+                                else -> {}
+                            }
+                        }
+                    val v = get()
+                    box.addView(slider(R.string.p_width, 0, 60, v[0].roundToInt(), { "$it" }) { x -> set(false, w = x.toFloat()) })
+                    box.addView(slider(R.string.p_gap, -150, 150, v[1].roundToInt(), { "$it" }) { x -> set(false, g = x.toFloat()) })
+                    box.addView(label(R.string.p_outline_hint))
+                    box.addView(swatchRow(color, false) { c -> set(true, c = c); openPanel("outline") })
+                    box.addView(chipRow(listOf(getString(R.string.p_line_solid), getString(R.string.p_line_dashed)), if (dashed) 1 else 0) { i ->
+                        set(true, d = i == 1); openPanel("outline")
+                    })
+                }
             }
 
             "imgshadow" -> if (im != null) {
