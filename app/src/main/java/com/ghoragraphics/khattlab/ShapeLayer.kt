@@ -51,7 +51,10 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
             l.gradColor1 = j.optInt("grad1", l.gradColor1); l.gradColor2 = j.optInt("grad2", l.gradColor2); l.gradAngle = f("gradAngle", 90f)
             l.strokeWidth = f("strokeWidth", 0f); l.strokeColor = j.optInt("strokeColor", l.strokeColor)
             l.dashed = j.optBoolean("dashed", false)
-            l.corner = f("corner", 20f); l.points = j.optInt("points", 5); l.inner = f("inner", 45f)
+            l.corner = f("corner", 20f)
+            val ra = j.optJSONArray("radii")
+            for (i in 0 until 4) l.radii[i] = ra?.optDouble(i, l.corner.toDouble())?.toFloat() ?: l.corner
+            l.points = j.optInt("points", 5); l.inner = f("inner", 45f)
             l.shadowRadius = f("shadowRadius", 0f); l.shadowDx = f("shadowDx", 0f); l.shadowDy = f("shadowDy", 0f)
             l.shadowColor = j.optInt("shadowColor", l.shadowColor)
             l.image = image
@@ -79,7 +82,27 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
     var strokeColor = Color.BLACK
     var dashed = false
 
-    var corner = 20f                 // 0..100 (rounded square, bubble)
+    var corner = 20f                 // 0..100 (rounded square, bubble): the "all corners" setting
+    // each corner on its own (top-left, top-right, bottom-right, bottom-left), 0..100
+    val radii = floatArrayOf(20f, 20f, 20f, 20f)
+
+    /** Sets every corner at once (the "all corners" slider). */
+    fun setAllCorners(v: Float) {
+        corner = v
+        radii.fill(v)
+    }
+
+    private val rr = FloatArray(8)
+
+    /** Adds a rectangle whose corners are rounded one by one. */
+    private fun roundRect(W: Float, H: Float) {
+        val maxR = min(W, H) / 2f
+        for (i in 0 until 4) {
+            val r = maxR * radii[i].coerceIn(0f, 100f) / 100f
+            rr[2 * i] = r; rr[2 * i + 1] = r
+        }
+        path.addRoundRect(RectF(0f, 0f, W, H), rr, Path.Direction.CW)
+    }
     var points = 5                   // star / polygon / burst
     var inner = 45f                  // 10..90, inner size of star / ring
 
@@ -109,6 +132,7 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
         c.fillMode = fillMode; c.fillColor = fillColor; c.gradColor1 = gradColor1; c.gradColor2 = gradColor2; c.gradAngle = gradAngle
         c.strokeWidth = strokeWidth; c.strokeColor = strokeColor; c.dashed = dashed
         c.corner = corner; c.points = points; c.inner = inner
+        radii.copyInto(c.radii)
         c.shadowRadius = shadowRadius; c.shadowDx = shadowDx; c.shadowDy = shadowDy; c.shadowColor = shadowColor
         c.image = image; c.imgScale = imgScale; c.imgX = imgX; c.imgY = imgY
         return c
@@ -120,6 +144,7 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
         put("fillMode", fillMode); put("fillColor", fillColor)
         put("grad1", gradColor1); put("grad2", gradColor2); put("gradAngle", gradAngle.toDouble())
         put("strokeWidth", strokeWidth.toDouble()); put("strokeColor", strokeColor); put("dashed", dashed)
+        put("radii", org.json.JSONArray().apply { radii.forEach { put(it.toDouble()) } })
         put("corner", corner.toDouble()); put("points", points); put("inner", inner.toDouble())
         put("shadowRadius", shadowRadius.toDouble()); put("shadowDx", shadowDx.toDouble()); put("shadowDy", shadowDy.toDouble())
         put("shadowColor", shadowColor)
@@ -148,10 +173,7 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
         val H = cH
         when (kind) {
             RECT -> path.addRect(0f, 0f, W, H, Path.Direction.CW)
-            ROUND_RECT -> {
-                val r = min(W, H) / 2f * corner.coerceIn(0f, 100f) / 100f
-                path.addRoundRect(RectF(0f, 0f, W, H), r, r, Path.Direction.CW)
-            }
+            ROUND_RECT -> roundRect(W, H)
             ELLIPSE -> path.addOval(RectF(0f, 0f, W, H), Path.Direction.CW)
             TRIANGLE -> { path.moveTo(W / 2f, 0f); path.lineTo(W, H); path.lineTo(0f, H); path.close() }
             RIGHT_TRIANGLE -> { path.moveTo(0f, 0f); path.lineTo(W, H); path.lineTo(0f, H); path.close() }
@@ -176,8 +198,7 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
             }
             BUBBLE -> {
                 val bh = H * 0.78f
-                val r = min(W, bh) / 2f * corner.coerceIn(0f, 100f) / 100f
-                path.addRoundRect(RectF(0f, 0f, W, bh), r, r, Path.Direction.CW)
+                roundRect(W, bh)
                 val tail = Path()
                 tail.moveTo(W * 0.22f, bh - 1f); tail.lineTo(W * 0.18f, H); tail.lineTo(W * 0.42f, bh - 1f); tail.close()
                 path.op(tail, Path.Op.UNION)

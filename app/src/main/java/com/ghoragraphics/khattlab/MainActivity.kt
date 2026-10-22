@@ -391,6 +391,7 @@ class MainActivity : Activity(), EditorView.Listener {
 
     private fun closePanel() {
         editor.imageAdjust = false
+        editor.perspEdit = false
         activeTool = null
         panelHost.removeAllViews()
         panelHost.visibility = View.GONE
@@ -406,6 +407,7 @@ class MainActivity : Activity(), EditorView.Listener {
 
     private fun openPanel(key: String) {
         if (key != "simage") editor.imageAdjust = false
+        editor.perspEdit = key == "persp"
         val keepScroll = if (activeTool == key) panelScroll?.scrollY ?: 0 else 0
         activeTool = key
         panelHost.removeAllViews()
@@ -513,9 +515,9 @@ class MainActivity : Activity(), EditorView.Listener {
                     us(false) { it.h = v.toFloat() }
                 })
                 if (sh.kind == ShapeLayer.ROUND_RECT || sh.kind == ShapeLayer.BUBBLE) {
-                    box.addView(slider(R.string.p_round, 0, 100, sh.corner.roundToInt(), { "$it%" }) { v ->
-                        us(false) { it.corner = v.toFloat() }
-                    })
+                    addCornerSliders(box, sh.corner, sh.radii) { i, v ->
+                        us(false) { if (i < 0) it.setAllCorners(v) else it.radii[i] = v }
+                    }
                 }
                 if (sh.kind == ShapeLayer.STAR || sh.kind == ShapeLayer.POLYGON || sh.kind == ShapeLayer.BURST) {
                     box.addView(slider(R.string.p_points, 3, 16, sh.points, { "$it" }) { v ->
@@ -656,7 +658,8 @@ class MainActivity : Activity(), EditorView.Listener {
                 box.addView(slider(R.string.p_persp_v, -80, 80, s.perspV.roundToInt(), { "$it" }) { v ->
                     editor.update(false) { it.perspV = v.toFloat() }
                 })
-                box.addView(resetChip { it.perspH = 0f; it.perspV = 0f })
+                box.addView(label(R.string.persp_drag_hint))
+                box.addView(resetChip { it.perspH = 0f; it.perspV = 0f; it.warp.fill(0f) })
             }
 
             "rot3d" -> if (s != null) {
@@ -923,9 +926,9 @@ class MainActivity : Activity(), EditorView.Listener {
             }
 
             "round" -> if (im != null) {
-                box.addView(slider(R.string.p_round, 0, 100, im.round.roundToInt(), { "$it%" }) { v ->
-                    ui(false) { it.round = v.toFloat() }
-                })
+                addCornerSliders(box, im.round, im.radii) { i, v ->
+                    ui(false) { if (i < 0) it.setAllCorners(v) else it.radii[i] = v }
+                }
             }
 
             "border" -> if (im != null) {
@@ -988,6 +991,25 @@ class MainActivity : Activity(), EditorView.Listener {
 
     private fun onOff(on: Boolean, onPick: (Boolean) -> Unit): View =
         chipRow(listOf(getString(R.string.p_on), getString(R.string.p_off)), if (on) 0 else 1) { i -> onPick(i == 0) }
+
+    /**
+     * Roundness: one slider for all corners, then one slider per corner.
+     * [onChange] gets the corner (-1 = all, 0 top-left, 1 top-right, 2 bottom-right, 3 bottom-left) and the value.
+     */
+    private fun addCornerSliders(box: LinearLayout, all: Float, radii: FloatArray, onChange: (Int, Float) -> Unit) {
+        val bars = ArrayList<SeekBar>()
+        box.addView(slider(R.string.p_round_all, 0, 100, all.roundToInt(), { "$it%" }) { v ->
+            onChange(-1, v.toFloat())
+            bars.forEach { it.progress = v } // the per-corner sliders follow
+        })
+        box.addView(label(R.string.p_round_each))
+        val names = intArrayOf(R.string.p_corner_tl, R.string.p_corner_tr, R.string.p_corner_br, R.string.p_corner_bl)
+        for (i in 0 until 4) {
+            val row = slider(names[i], 0, 100, radii[i].roundToInt(), { "$it%" }) { v -> onChange(i, v.toFloat()) }
+            ((row as ViewGroup).getChildAt(1) as? SeekBar)?.let { bars.add(it) }
+            box.addView(row)
+        }
+    }
 
     private fun resetChip(block: (Layer) -> Unit): View =
         chipRow(listOf(getString(R.string.p_reset))) { _ ->

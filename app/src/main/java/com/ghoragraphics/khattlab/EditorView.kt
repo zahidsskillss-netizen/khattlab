@@ -60,6 +60,19 @@ class EditorView @JvmOverloads constructor(
     var imageAdjust = false
         set(v) { field = v; invalidate() }
     private var startImgScale = 1f
+
+    /** When on (perspective panel open), the selected layer shows 4 corner handles that pull its corners freely. */
+    var perspEdit = false
+        set(v) { field = v; invalidate() }
+    private var warpCorner = -1
+    private var grabDX = 0f
+    private var grabDY = 0f
+    private val warpPts = FloatArray(8)
+    private val warpLine = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = 0xAAFFFFFF.toInt()
+    }
+    private val warpHandle = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
     private var dragPoint = -1
     private val penPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pointPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -124,7 +137,7 @@ class EditorView @JvmOverloads constructor(
 
     // touch state
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
-    private var mode = 0 // 0 none, 1 drag, 2 pinch, 3 handle scale+rotate, 4 handle scale
+    private var mode = 0 // 0 none, 1 drag, 2 pinch, 3 handle scale+rotate, 4 handle scale, 5 pull a perspective corner
     private var lastX = 0f
     private var lastY = 0f
     private var downVX = 0f
@@ -529,6 +542,10 @@ class EditorView @JvmOverloads constructor(
 
         val s = selected ?: return
         if (s.hidden) return
+        if (perspEdit && !s.locked) {
+            drawWarp(canvas, s)
+            return
+        }
         selectionCorners(s)
         selPath.reset()
         selPath.moveTo(corners[0], corners[1])
@@ -554,6 +571,64 @@ class EditorView @JvmOverloads constructor(
         }
     }
 
+    private fun warpCornersView(s: Layer) {
+        s.contentCorners(fonts, warpPts)
+        for (i in 0 until 4) {
+            warpPts[2 * i] = offX + warpPts[2 * i] * fit
+            warpPts[2 * i + 1] = offY + warpPts[2 * i + 1] * fit
+        }
+    }
+
+    /** Point at (u, v) (0..1) inside the quad of [warpPts], following the perspective. */
+    private fun quadPoint(u: Float, v: Float, out: FloatArray, at: Int) {
+        val m = android.graphics.Matrix()
+        m.setPolyToPoly(floatArrayOf(0f, 0f, 1f, 0f, 1f, 1f, 0f, 1f), 0, warpPts, 0, 4)
+        val p = floatArrayOf(u, v)
+        m.mapPoints(p)
+        out[at] = p[0]; out[at + 1] = p[1]
+    }
+
+    /** Outline, a 3x3 grid and 4 round corner handles, like PixelLab's free perspective. */
+    private fun drawWarp(canvas: Canvas, s: Layer) {
+        warpCornersView(s)
+        selPath.reset()
+        selPath.moveTo(warpPts[0], warpPts[1])
+        for (i in 1 until 4) selPath.lineTo(warpPts[2 * i], warpPts[2 * i + 1])
+        selPath.close()
+        canvas.drawPath(selPath, selPaint)
+        warpLine.strokeWidth = 1f * density
+        val a = FloatArray(4)
+        for (k in 1..2) {
+            val t = k / 3f
+            quadPoint(t, 0f, a, 0); quadPoint(t, 1f, a, 2)
+            canvas.drawLine(a[0], a[1], a[2], a[3], warpLine)
+            quadPoint(0f, t, a, 0); quadPoint(1f, t, a, 2)
+            canvas.drawLine(a[0], a[1], a[2], a[3], warpLine)
+        }
+        val r = handleR * 1.05f
+        for (i in 0 until 4) {
+            val hx = warpPts[2 * i]
+            val hy = warpPts[2 * i + 1]
+            warpHandle.color = if (i == warpCorner) gold else Color.WHITE
+            canvas.drawCircle(hx, hy, r, warpHandle)
+            canvas.drawCircle(hx, hy, r, handleRing)
+        }
+    }
+
+    /** Which free-perspective corner (0..3) is under the finger, or -1. */
+    private fun hitWarp(vx: Float, vy: Float): Int {
+        val s = selected ?: return -1
+        if (!perspEdit || s.locked || s.hidden) return -1
+        warpCornersView(s)
+        var best = -1
+        var bestD = handleR * 2.2f
+        for (i in 0 until 4) {
+            val d = hypot(vx - warpPts[2 * i], vy - warpPts[2 * i + 1])
+            if (d <= bestD) { bestD = d; best = i }
+        }
+        return best
+    }
+
     // ---------- touch ----------
 
     private fun toDocX(vx: Float) = (vx - offX) / fit
@@ -572,7 +647,7 @@ class EditorView @JvmOverloads constructor(
     /** Which corner handle (0..3) is under the finger, or -1. */
     private fun hitHandle(vx: Float, vy: Float): Int {
         val s = selected ?: return -1
-        if (s.locked || s.hidden) return -1
+        if (s.locked || s.hidden || perspEdit) return -1
         selectionCorners(s)
         for (i in 0 until 4) {
             if (hypot(vx - corners[2 * i], vy - corners[2 * i + 1]) <= handleR * 1.7f) return i
@@ -724,6 +799,17 @@ class EditorView @JvmOverloads constructor(
                 val dx = toDocX(e.x)
                 val dy = toDocY(e.y)
 
+                // free perspective: pull one corner
+                val wc = hitWarp(e.x, e.y)
+                if (wc >= 0) {
+                    warpCorner = wc
+                    grabDX = warpPts[2 * wc] - e.x
+                    grabDY = warpPts[2 * wc + 1] - e.y
+                    mode = 5
+                    invalidate()
+                    return true
+                }
+
                 // corner handles of the selected layer
                 val h = hitHandle(e.x, e.y)
                 val s0 = selected
@@ -757,7 +843,7 @@ class EditorView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 val s = selected
-                if (s != null && !s.locked && e.pointerCount >= 2) {
+                if (mode != 5 && s != null && !s.locked && e.pointerCount >= 2) {
                     mode = 2
                     startDist = spacing(e).coerceAtLeast(1f)
                     startAngle = angle(e)
@@ -786,6 +872,13 @@ class EditorView @JvmOverloads constructor(
                         s.rotation = snapAngle(startRot + angle(e) - startAngle)
                         invalidate()
                     }
+                    5 -> {
+                        if (!moved && hypot(e.x - downVX, e.y - downVY) < touchSlop / 2f) return true
+                        moved = true
+                        commitOnce()
+                        s.moveCorner(fonts, warpCorner, toDocX(e.x + grabDX), toDocY(e.y + grabDY))
+                        invalidate()
+                    }
                     3, 4 -> {
                         commitOnce()
                         val vx = e.x - centerVX(s)
@@ -812,9 +905,14 @@ class EditorView @JvmOverloads constructor(
             MotionEvent.ACTION_UP -> {
                 // a tap (no drag) on an empty spot unselects
                 if (mode == 1 && !moved && downOnEmpty) select(null)
+                if (mode == 5) {
+                    warpCorner = -1
+                    invalidate()
+                    if (committed) listener?.onDrawChanged()
+                }
                 mode = 0
             }
-            MotionEvent.ACTION_CANCEL -> mode = 0
+            MotionEvent.ACTION_CANCEL -> { mode = 0; warpCorner = -1; invalidate() }
         }
         return true
     }

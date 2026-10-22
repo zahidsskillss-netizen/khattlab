@@ -123,6 +123,13 @@
     <string name="p_reset">بېرته اصلي</string>
     <string name="p_reflect_size">اندازه</string>
     <string name="p_round">ګردوالی</string>
+    <string name="p_round_all">ټول کونجونه</string>
+    <string name="p_round_each">هر کونج جلا:</string>
+    <string name="p_corner_tl">پورته کیڼ</string>
+    <string name="p_corner_tr">پورته ښي</string>
+    <string name="p_corner_br">لاندې ښي</string>
+    <string name="p_corner_bl">لاندې کیڼ</string>
+    <string name="persp_drag_hint">د شکل څلور کونجونه په ګوته کش کړئ، هر یو جلا</string>
     <string name="p_save_style">+ ستایل ساتل</string>
     <string name="p_step_small">لږ خوځول</string>
     <string name="p_step_big">ډېر خوځول</string>

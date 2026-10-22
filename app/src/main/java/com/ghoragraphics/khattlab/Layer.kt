@@ -10,6 +10,7 @@ import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.RectF
 import android.graphics.Shader
+import kotlin.math.abs
 import kotlin.math.max
 
 /**
@@ -30,6 +31,11 @@ abstract class Layer {
     var perspV = 0f
     var rotX = 0f
     var rotY = 0f
+
+    // free perspective: how far each corner of the box is pulled by finger
+    // (top-left, top-right, bottom-right, bottom-left; x, y), in parts of the box width / height
+    val warp = FloatArray(8)
+    fun hasWarp() = warp.any { it != 0f }
 
     // reflection under the layer
     var reflectSize = 0f   // 0..100 (% of height), 0 = off
@@ -67,6 +73,7 @@ abstract class Layer {
     protected fun copyBaseFrom(o: Layer) {
         x = o.x; y = o.y; rotation = o.rotation; scale = o.scale; opacity = o.opacity
         perspH = o.perspH; perspV = o.perspV; rotX = o.rotX; rotY = o.rotY
+        o.warp.copyInto(warp)
         reflectSize = o.reflectSize; reflectGap = o.reflectGap; reflectAlpha = o.reflectAlpha
         locked = o.locked; hidden = o.hidden
     }
@@ -76,6 +83,7 @@ abstract class Layer {
         j.put("x", x.toDouble()); j.put("y", y.toDouble()); j.put("rotation", rotation.toDouble()); j.put("scale", scale.toDouble())
         j.put("opacity", opacity)
         j.put("perspH", perspH.toDouble()); j.put("perspV", perspV.toDouble()); j.put("rotX", rotX.toDouble()); j.put("rotY", rotY.toDouble())
+        if (hasWarp()) j.put("warp", org.json.JSONArray().apply { warp.forEach { put(it.toDouble()) } })
         j.put("reflectSize", reflectSize.toDouble()); j.put("reflectGap", reflectGap.toDouble()); j.put("reflectAlpha", reflectAlpha)
         j.put("locked", locked); j.put("hidden", hidden)
     }
@@ -85,39 +93,110 @@ abstract class Layer {
         x = f("x", 0f); y = f("y", 0f); rotation = f("rotation", 0f); scale = f("scale", 1f)
         opacity = j.optInt("opacity", 255)
         perspH = f("perspH", 0f); perspV = f("perspV", 0f); rotX = f("rotX", 0f); rotY = f("rotY", 0f)
+        warp.fill(0f)
+        j.optJSONArray("warp")?.let { a -> for (i in 0 until minOf(8, a.length())) warp[i] = a.optDouble(i, 0.0).toFloat() }
         reflectSize = f("reflectSize", 0f); reflectGap = f("reflectGap", 0f); reflectAlpha = j.optInt("reflectAlpha", 130)
         locked = j.optBoolean("locked", false); hidden = j.optBoolean("hidden", false)
     }
 
-    private fun buildMatrix(out: Matrix) {
-        out.reset()
-        out.setTranslate(-cW / 2f, -cH / 2f)
-        if (perspH != 0f || perspV != 0f) {
-            val hw = cW / 2f
-            val hh = cH / 2f
-            val src = floatArrayOf(-hw, -hh, hw, -hh, hw, hh, -hw, hh)
-            val dst = src.copyOf()
-            val v = perspV / 100f
-            if (v > 0f) { dst[0] *= 1f - v; dst[2] *= 1f - v } else { dst[4] *= 1f + v; dst[6] *= 1f + v }
-            val h = perspH / 100f
-            if (h > 0f) { dst[3] *= 1f - h; dst[5] *= 1f - h } else { dst[1] *= 1f + h; dst[7] *= 1f + h }
-            val p = Matrix()
-            p.setPolyToPoly(src, 0, dst, 0, 4)
-            out.postConcat(p)
+    /** Where the 4 box corners go (box centered on 0,0), from the sliders and, if [withWarp], the dragged corners. */
+    private fun perspDst(out: FloatArray, withWarp: Boolean) {
+        val hw = cW / 2f
+        val hh = cH / 2f
+        out[0] = -hw; out[1] = -hh; out[2] = hw; out[3] = -hh; out[4] = hw; out[5] = hh; out[6] = -hw; out[7] = hh
+        val v = perspV / 100f
+        if (v > 0f) { out[0] *= 1f - v; out[2] *= 1f - v } else if (v < 0f) { out[4] *= 1f + v; out[6] *= 1f + v }
+        val h = perspH / 100f
+        if (h > 0f) { out[3] *= 1f - h; out[5] *= 1f - h } else if (h < 0f) { out[1] *= 1f + h; out[7] *= 1f + h }
+        if (withWarp) for (i in 0 until 4) {
+            out[2 * i] += warp[2 * i] * cW
+            out[2 * i + 1] += warp[2 * i + 1] * cH
         }
+    }
+
+    /** 3D turn, size, rotation and place: everything that comes after the perspective. */
+    private fun buildPost(out: Matrix) {
+        out.reset()
         if (rotX != 0f || rotY != 0f) {
             cam.save()
             cam.setLocation(0f, 0f, -max(8f, max(cW, cH) / 72f * 2.5f))
             cam.rotateX(rotX)
             cam.rotateY(rotY)
-            val c = Matrix()
-            cam.getMatrix(c)
+            cam.getMatrix(out)
             cam.restore()
-            out.postConcat(c)
         }
         out.postScale(scale, scale)
         out.postRotate(rotation)
         out.postTranslate(x, y)
+    }
+
+    private val post = Matrix()
+    private val pm = Matrix()
+    private val srcPts = FloatArray(8)
+    private val dstPts = FloatArray(8)
+
+    private fun buildMatrix(out: Matrix) {
+        out.reset()
+        out.setTranslate(-cW / 2f, -cH / 2f)
+        if (perspH != 0f || perspV != 0f || hasWarp()) {
+            val hw = cW / 2f
+            val hh = cH / 2f
+            srcPts[0] = -hw; srcPts[1] = -hh; srcPts[2] = hw; srcPts[3] = -hh
+            srcPts[4] = hw; srcPts[5] = hh; srcPts[6] = -hw; srcPts[7] = hh
+            perspDst(dstPts, true)
+            if (pm.setPolyToPoly(srcPts, 0, dstPts, 0, 4)) out.postConcat(pm)
+        }
+        buildPost(post)
+        out.postConcat(post)
+    }
+
+    /** Page positions of the 4 corners of the content (no padding): top-left, top-right, bottom-right, bottom-left. */
+    fun contentCorners(fm: FontManager, out: FloatArray) {
+        prepare(fm)
+        buildMatrix(m)
+        val pts = floatArrayOf(0f, 0f, cW, 0f, cW, cH, 0f, cH)
+        m.mapPoints(out, pts)
+    }
+
+    /**
+     * Move content corner [i] (0..3) to the page point (px, py). Returns false (and changes nothing)
+     * when the shape would fold over itself.
+     */
+    fun moveCorner(fm: FontManager, i: Int, px: Float, py: Float): Boolean {
+        prepare(fm)
+        buildPost(post)
+        if (!post.invert(inv)) return false
+        val q = floatArrayOf(px, py)
+        inv.mapPoints(q)
+        val base = FloatArray(8)
+        perspDst(base, false)
+        val ox = warp[2 * i]
+        val oy = warp[2 * i + 1]
+        warp[2 * i] = (q[0] - base[2 * i]) / cW
+        warp[2 * i + 1] = (q[1] - base[2 * i + 1]) / cH
+        perspDst(base, true)
+        if (!convex(base)) {
+            warp[2 * i] = ox
+            warp[2 * i + 1] = oy
+            return false
+        }
+        return true
+    }
+
+    /** True when the 4 points make a quad that does not cross or fold. */
+    private fun convex(p: FloatArray): Boolean {
+        var sign = 0
+        for (k in 0 until 4) {
+            val ax = p[2 * ((k + 1) % 4)] - p[2 * k]
+            val ay = p[2 * ((k + 1) % 4) + 1] - p[2 * k + 1]
+            val bx = p[2 * ((k + 2) % 4)] - p[2 * ((k + 1) % 4)]
+            val by = p[2 * ((k + 2) % 4) + 1] - p[2 * ((k + 1) % 4) + 1]
+            val c = ax * by - ay * bx
+            if (abs(c) < 1e-3f) return false
+            val sg = if (c > 0f) 1 else -1
+            if (sign == 0) sign = sg else if (sg != sign) return false
+        }
+        return true
     }
 
     fun draw(canvas: Canvas, fm: FontManager) {

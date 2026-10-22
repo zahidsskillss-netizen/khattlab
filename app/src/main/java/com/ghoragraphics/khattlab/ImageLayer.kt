@@ -20,7 +20,17 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
 
     var flipH = false
     var flipV = false
-    var round = 0f                  // corner roundness 0..100
+    var round = 0f                  // corner roundness 0..100: the "all corners" setting
+    // each corner on its own (top-left, top-right, bottom-right, bottom-left), 0..100
+    val radii = FloatArray(4)
+
+    fun setAllCorners(v: Float) {
+        round = v
+        radii.fill(v)
+    }
+
+    private val rr = FloatArray(8)
+    private val roundPath = android.graphics.Path()
     var borderWidth = 0f
     var borderColor = Color.WHITE
     var shadowRadius = 0f
@@ -48,6 +58,7 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
         val c = ImageLayer(bitmap, x, y)
         c.copyBaseFrom(this)
         c.flipH = flipH; c.flipV = flipV; c.round = round
+        radii.copyInto(c.radii)
         c.borderWidth = borderWidth; c.borderColor = borderColor
         c.shadowRadius = shadowRadius; c.shadowDx = shadowDx; c.shadowDy = shadowDy; c.shadowColor = shadowColor
         return c
@@ -57,6 +68,7 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
     fun toJson(file: String): org.json.JSONObject = org.json.JSONObject().apply {
         put("type", "image"); put("file", file)
         put("flipH", flipH); put("flipV", flipV); put("round", round.toDouble())
+        put("radii", org.json.JSONArray().apply { radii.forEach { put(it.toDouble()) } })
         put("borderWidth", borderWidth.toDouble()); put("borderColor", borderColor)
         put("shadowRadius", shadowRadius.toDouble()); put("shadowDx", shadowDx.toDouble()); put("shadowDy", shadowDy.toDouble())
         put("shadowColor", shadowColor)
@@ -68,6 +80,8 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
             val l = ImageLayer(b, 0f, 0f)
             fun f(k: String, d: Float) = j.optDouble(k, d.toDouble()).toFloat()
             l.flipH = j.optBoolean("flipH"); l.flipV = j.optBoolean("flipV"); l.round = f("round", 0f)
+            val ra = j.optJSONArray("radii")
+            for (i in 0 until 4) l.radii[i] = ra?.optDouble(i, l.round.toDouble())?.toFloat() ?: l.round
             l.borderWidth = f("borderWidth", 0f); l.borderColor = j.optInt("borderColor", Color.WHITE)
             l.shadowRadius = f("shadowRadius", 0f); l.shadowDx = f("shadowDx", 0f); l.shadowDy = f("shadowDy", 0f)
             l.shadowColor = j.optInt("shadowColor", 0x99000000.toInt())
@@ -92,7 +106,19 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
         prepare(fm)
         if (bitmap.isRecycled) return
         rect.set(0f, 0f, cW, cH)
-        val r = min(cW, cH) / 2f * round / 100f
+        // the canvas is flipped below, so a corner the user sees comes from the mirrored corner
+        val maxR = min(cW, cH) / 2f
+        var anyRound = false
+        for (i in 0 until 4) {
+            var k = i
+            if (flipH) k = intArrayOf(1, 0, 3, 2)[k]
+            if (flipV) k = intArrayOf(3, 2, 1, 0)[k]
+            val r = maxR * radii[k].coerceIn(0f, 100f) / 100f
+            if (r > 0f) anyRound = true
+            rr[2 * i] = r; rr[2 * i + 1] = r
+        }
+        roundPath.reset()
+        roundPath.addRoundRect(rect, rr, android.graphics.Path.Direction.CW)
         // border and shadow are set in screen size, so divide by this layer's scale
         val inv = 1f / max(scale, 0.01f)
 
@@ -104,17 +130,17 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
             // a solid copy of the picture's shape casts the shadow; the picture covers it
             shapePaint.color = shadowColor
             shapePaint.setShadowLayer(max(shadowRadius, 0.5f) * inv, shadowDx * inv, shadowDy * inv, shadowColor)
-            if (bitmap.hasAlpha() && r <= 0f) {
+            if (bitmap.hasAlpha() && !anyRound) {
                 canvas.drawBitmap(alphaMask(), null, rect, shapePaint)
             } else {
-                canvas.drawRoundRect(rect, r, r, shapePaint)
+                canvas.drawPath(roundPath, shapePaint)
             }
         }
 
         paint.color = Color.BLACK
-        if (r > 0f) {
+        if (anyRound) {
             paint.shader = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
-            canvas.drawRoundRect(rect, r, r, paint)
+            canvas.drawPath(roundPath, paint)
             paint.shader = null
         } else {
             canvas.drawBitmap(bitmap, null, rect, paint)
@@ -124,7 +150,7 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
             borderPaint.style = Paint.Style.STROKE
             borderPaint.color = borderColor
             borderPaint.strokeWidth = borderWidth * inv
-            canvas.drawRoundRect(rect, r, r, borderPaint)
+            canvas.drawPath(roundPath, borderPaint)
         }
         canvas.restore()
     }
