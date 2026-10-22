@@ -11,8 +11,8 @@ android {
         applicationId = "com.ghoragraphics.nawakhtgar"
         minSdk = 24
         targetSdk = 34
-        versionCode = 8
-        versionName = "2.5"
+        versionCode = 9
+        versionName = "2.6"
     }
 
     // One fixed key, so every new APK installs over the old one (projects are kept)

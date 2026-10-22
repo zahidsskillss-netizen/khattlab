@@ -22,11 +22,9 @@ import kotlin.math.roundToInt
 class AboutActivity : Activity() {
 
     companion object {
-        const val FACEBOOK = "https://www.facebook.com/zahid.alkozai"
-        const val TELEGRAM = "https://t.me/zahid_af"
+        // only Telegram for contact (for now)
         const val CHANNEL = "https://t.me/pashtoapp"
-        const val PHONE = "0780630100"
-        const val WHATSAPP = "https://wa.me/93780630100"
+        const val GHORA_TG = "https://t.me/GhoraGraphicsProduction"
         const val SHARE_LINK = "https://github.com/zahidsskillss-netizen/khattlab/releases/latest"
 
         private const val BG = 0xFFF4F4F7.toInt()
@@ -75,36 +73,16 @@ class AboutActivity : Activity() {
         feats.forEachIndexed { i, r -> app.addView(bullet(pashtoNum(i + 1), getString(r))) }
         root.addView(app)
 
-        // ---- the developer ----
-        val dev = card("✎", getString(R.string.ab_dev_t))
-        val who = row().apply { setPadding(0, dp(4), 0, dp(10)) }
-        who.addView(photo(92))
-        val names = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), 0, dp(14), 0)
-        }
-        names.addView(text(getString(R.string.ab_dev_name), 21f, INK, bold))
-        names.addView(text("Zahid Ullah Alokozay", 14f, GOLD_D, bold).apply { textDirection = View.TEXT_DIRECTION_LTR; gravity = Gravity.START })
-        names.addView(text(getString(R.string.ab_maker), 13.5f, MUTED, body))
-        who.addView(names, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        dev.addView(who)
-        dev.addView(para(getString(R.string.ab_me_text)))
-        val chips = row().apply { setPadding(0, dp(10), 0, 0) }
-        listOf(R.string.ab_chip1, R.string.ab_chip2, R.string.ab_chip3).forEachIndexed { i, r ->
-            if (i > 0) chips.addView(View(this), LinearLayout.LayoutParams(dp(6), 1))
-            chips.addView(chip(getString(r)))
-        }
-        dev.addView(chips)
-        dev.addView(text(getString(R.string.ab_photo_hint), 13f, MUTED, body).apply { setPadding(0, dp(10), 0, 0) })
-        root.addView(dev)
+        // ---- test version ----
+        val test = card("⏳", getString(R.string.trial_left, Trial.daysLeft(this)))
+        test.addView(para(getString(R.string.ab_test_text)))
+        root.addView(test)
 
-        // ---- contact ----
-        val contact = card("☎", getString(R.string.ab_contact))
-        contact.addView(contactRow(getString(R.string.ab_whatsapp), PHONE, WHATSAPP))
-        contact.addView(contactRow(getString(R.string.ab_telegram), "t.me/zahid_af", TELEGRAM))
-        contact.addView(contactRow(getString(R.string.ab_facebook), "zahid.alkozai", FACEBOOK))
-        contact.addView(contactRow(getString(R.string.ab_call), PHONE, "tel:$PHONE"))
-        contact.addView(contactRow(getString(R.string.ab_channel), "t.me/pashtoapp", CHANNEL))
+        // ---- feedback + contact: Telegram only ----
+        val contact = card("☎", getString(R.string.ab_feedback_t))
+        contact.addView(para(getString(R.string.trial_feedback)))
+        contact.addView(contactRow(getString(R.string.tg_channel), "t.me/pashtoapp", CHANNEL))
+        contact.addView(contactRow(getString(R.string.ab_telegram), "t.me/GhoraGraphicsProduction", GHORA_TG))
         root.addView(contact)
 
         // ---- Ghora Graphics Production ----
@@ -186,12 +164,7 @@ class AboutActivity : Activity() {
         ad.addView(text(getString(R.string.ab_contact_now), 15f, GOLD, bold).apply {
             gravity = Gravity.CENTER; setPadding(0, dp(16), 0, dp(10))
         })
-        ad.addView(button(getString(R.string.ab_whatsapp) + ": " + PHONE, true) { open(WHATSAPP) }, matchWrap())
-        val more = row()
-        more.addView(darkButton(getString(R.string.ab_telegram)) { open(TELEGRAM) }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        more.addView(View(this), LinearLayout.LayoutParams(dp(8), 1))
-        more.addView(darkButton(getString(R.string.ab_facebook)) { open(FACEBOOK) }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        ad.addView(more, topMargin(10))
+        ad.addView(button(getString(R.string.ab_telegram) + ": t.me/GhoraGraphicsProduction", true) { open(GHORA_TG) }, matchWrap())
         ad.layoutParams = matchWrap().apply { setMargins(dp(16), dp(14), dp(16), 0) }
         return ad
     }
@@ -209,20 +182,6 @@ class AboutActivity : Activity() {
         head.addView(text(title, 18f, INK, bold).apply { setPadding(dp(10), 0, dp(10), 0) })
         c.addView(head)
         return c
-    }
-
-    private fun photo(size: Int): ImageView = ImageView(this).apply {
-        setImageResource(R.drawable.developer)
-        scaleType = ImageView.ScaleType.CENTER_CROP
-        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(GOLD) }
-        val p = dp(3); setPadding(p, p, p, p)
-        clipToOutline = true
-        outlineProvider = object : android.view.ViewOutlineProvider() {
-            override fun getOutline(view: View, outline: android.graphics.Outline) { outline.setOval(0, 0, view.width, view.height) }
-        }
-        layoutParams = LinearLayout.LayoutParams(dp(size), dp(size))
-        contentDescription = getString(R.string.ab_facebook)
-        setOnClickListener { open(FACEBOOK) }
     }
 
     private fun badge(s: String, size: Int) = text(s, 15f, GOLD_D, bold).apply {
@@ -265,14 +224,6 @@ class AboutActivity : Activity() {
         background = RippleDrawable(ColorStateList.valueOf(0x33000000),
             if (filled) GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFFF6D27A.toInt(), GOLD_D)).apply { cornerRadius = dp(16).toFloat() }
             else rounded(0x00000000, 16, GOLD), null)
-        isClickable = true
-        setOnClickListener { onClick() }
-    }
-
-    private fun darkButton(s: String, onClick: () -> Unit) = text(s, 14f, GOLD, bold).apply {
-        gravity = Gravity.CENTER
-        setPadding(dp(12), dp(10), dp(12), dp(12))
-        background = RippleDrawable(ColorStateList.valueOf(0x30F3E3A5), rounded(0x1AFFFFFF, 14, 0x66F3E3A5), null)
         isClickable = true
         setOnClickListener { onClick() }
     }

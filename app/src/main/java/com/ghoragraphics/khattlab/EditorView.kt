@@ -195,7 +195,7 @@ class EditorView @JvmOverloads constructor(
         layers.clear()
         layers.addAll(s.layers.map { it.copy() })
         doc = s.bg
-        selected = layers.getOrNull(s.selectedIndex)
+        selected = layers.getOrNull(s.selectedIndex)?.takeIf { !it.locked && !it.hidden }
         listener?.onSelectionChanged(selected)
         listener?.onHistoryChanged()
         invalidate()
@@ -337,31 +337,42 @@ class EditorView @JvmOverloads constructor(
 
     // ---------- layers list ----------
 
-    fun selectFromList(l: Layer) {
+    /** Picks a layer from the layers list. A locked or hidden layer can't be picked. */
+    fun selectFromList(l: Layer): Boolean {
+        if (l.locked || l.hidden || !layers.contains(l)) return false
         select(l)
+        return true
     }
 
     /** Moves a layer to a new place in the stack (0 = bottom). */
     fun moveLayerTo(l: Layer, to: Int) {
         val from = layers.indexOf(l)
+        if (from < 0 || layers.size < 2) return
         val t = to.coerceIn(0, layers.size - 1)
-        if (from < 0 || from == t) return
+        if (from == t) return
         commit()
         layers.removeAt(from)
-        layers.add(t, l)
+        layers.add(t.coerceIn(0, layers.size), l)
+        listener?.onHistoryChanged()
         invalidate()
     }
 
     fun setLocked(l: Layer, on: Boolean) {
+        if (!layers.contains(l)) return
         commit()
         l.locked = on
+        // a locked layer can't stay selected, so nothing can change it until it is unlocked
+        if (on && selected === l) select(null)
+        listener?.onHistoryChanged()
         invalidate()
     }
 
     fun setHidden(l: Layer, on: Boolean) {
+        if (!layers.contains(l)) return
         commit()
         l.hidden = on
         if (on && selected === l) select(null)
+        listener?.onHistoryChanged()
         invalidate()
     }
 
@@ -369,6 +380,7 @@ class EditorView @JvmOverloads constructor(
         if (!layers.contains(l)) return
         commit()
         layers.remove(l)
+        listener?.onHistoryChanged()
         if (selected === l) select(null) else invalidate()
     }
 

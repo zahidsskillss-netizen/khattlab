@@ -37,6 +37,11 @@
             android:exported="false"
             android:screenOrientation="portrait" />
 
+        <activity
+            android:name=".ExpiredActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
         <provider
             android:name=".ShareProvider"
             android:authorities="com.ghoragraphics.nawakhtgar.share"

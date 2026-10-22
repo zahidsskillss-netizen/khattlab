@@ -118,6 +118,10 @@ class MainActivity : Activity(), EditorView.Listener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Trial.expired(this)) {
+            showExpired()
+            return
+        }
         setContentView(R.layout.activity_main)
 
         fonts = FontManager(this)
@@ -161,8 +165,26 @@ class MainActivity : Activity(), EditorView.Listener {
         if (uri != null) loadBitmapThen(uri, 2560) { editor.setPhoto(it) }
     }
 
+    private var trialOver = false
+
+    private fun showExpired() {
+        trialOver = true
+        startActivity(Intent(this, ExpiredActivity::class.java))
+        finish()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // the app may stay open across the last day
+        if (!trialOver && Trial.expired(this)) {
+            if (dirty && !editor.isBlank()) saveProject(true)
+            showExpired()
+        }
+    }
+
     override fun onPause() {
         super.onPause()
+        if (trialOver) return
         // never lose work: whatever is on the page is kept as a project
         if (dirty && !editor.isBlank()) saveProject(true)
     }
@@ -1547,6 +1569,7 @@ class MainActivity : Activity(), EditorView.Listener {
     }
 
     private fun hideLayers() {
+        layerDragActive = false
         layersBox.visibility = View.GONE
     }
 
@@ -1583,7 +1606,28 @@ class MainActivity : Activity(), EditorView.Listener {
         setOnClickListener { onClick() }
     }
 
+    private var layersRebuildPending = false
+    private var layerDragActive = false
+
+    /**
+     * Rebuilds the layers list on the next frame, never inside a touch or click on one of its rows.
+     * Rebuilding right away removed the row that was still handling the finger, which crashed the app,
+     * and it ran before the change was made, so the list showed the old order / old lock state.
+     */
     private fun rebuildLayers() {
+        if (layersRebuildPending) return
+        layersRebuildPending = true
+        layersBox.post {
+            layersRebuildPending = false
+            if (layerDragActive) {
+                layersRebuildPending = true // rebuilt when the drag ends
+            } else if (layersBox.visibility == View.VISIBLE || layersBox.childCount == 0) {
+                buildLayersNow()
+            }
+        }
+    }
+
+    private fun buildLayersNow() {
         layersBox.removeAllViews()
         val head = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1608,6 +1652,8 @@ class MainActivity : Activity(), EditorView.Listener {
         val list = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(8), 0, dp(8), dp(12))
+            clipChildren = false
+            clipToPadding = false
         }
         scroll.addView(list)
         layersBox.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
@@ -1623,19 +1669,25 @@ class MainActivity : Activity(), EditorView.Listener {
 
         val itemH = dp(96)
         val margin = dp(6)
+        val step = (itemH + margin).toFloat()
         val all = editor.layers.toList()
+        val rows = ArrayList<View>()
         // top of the list = front of the page
         all.asReversed().forEachIndexed { pos, l ->
             val sel = l === editor.selected
             val item = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 background = GradientDrawable().apply {
-                    setColor(Color.WHITE)
-                    setStroke(dp(if (sel) 3 else 1), if (sel) accent else 0x22000000)
+                    setColor(if (l.locked) 0xFFF4F4F6.toInt() else Color.WHITE)
+                    setStroke(dp(if (sel) 3 else 1), if (sel) accent else if (l.locked) 0x55E53935 else 0x22000000)
                     cornerRadius = dp(6).toFloat()
                 }
                 setOnClickListener {
-                    if (!l.hidden) editor.selectFromList(l)
+                    if (layerDragActive) return@setOnClickListener
+                    when {
+                        l.locked -> toast(R.string.layer_locked)
+                        !l.hidden -> editor.selectFromList(l)
+                    }
                 }
             }
             if (l.hidden) item.alpha = 0.55f
@@ -1651,7 +1703,8 @@ class MainActivity : Activity(), EditorView.Listener {
             item.addView(ImageView(this).apply {
                 background = checker
                 scaleType = ImageView.ScaleType.FIT_CENTER
-                setImageBitmap(layerPreview(l, prevW, itemH - dp(12)))
+                val bmp = try { layerPreview(l, prevW, itemH - dp(12)) } catch (e: Throwable) { null }
+                if (bmp != null) setImageBitmap(bmp)
             }, LinearLayout.LayoutParams(0, itemH - dp(12), 1f).apply { setMargins(dp(2), dp(6), dp(6), dp(6)) })
 
             val buttons = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -1659,20 +1712,26 @@ class MainActivity : Activity(), EditorView.Listener {
             val r2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             val bs = itemH / 2
             r1.addView(smallIcon(if (l.locked) R.drawable.ic_lock else R.drawable.ic_lock_open, if (l.locked) 0xFFE53935.toInt() else 0xFF5F6368.toInt()) {
-                editor.setLocked(l, !l.locked)
+                if (!layerDragActive) editor.setLocked(l, !l.locked)
             }, LinearLayout.LayoutParams(dp(44), bs))
             r1.addView(smallIcon(R.drawable.ic_edit, 0xFF5F6368.toInt()) {
+                if (layerDragActive) return@smallIcon
+                if (l.locked) {
+                    // stays locked until the user unlocks it
+                    toast(R.string.layer_locked)
+                    return@smallIcon
+                }
                 if (l.hidden) editor.setHidden(l, false)
-                if (l.locked) editor.setLocked(l, false)
                 editor.selectFromList(l)
                 hideLayers()
                 if (l is TextLayer) promptText(l)
             }, LinearLayout.LayoutParams(dp(44), bs))
             r2.addView(smallIcon(if (l.hidden) R.drawable.ic_visibility_off else R.drawable.ic_visibility, if (l.hidden) 0xFFE53935.toInt() else 0xFF5F6368.toInt()) {
-                editor.setHidden(l, !l.hidden)
+                if (!layerDragActive) editor.setHidden(l, !l.hidden)
             }, LinearLayout.LayoutParams(dp(44), bs))
             r2.addView(smallIcon(R.drawable.ic_delete, 0xFF5F6368.toInt()) {
-                editor.deleteLayer(l)
+                if (layerDragActive) return@smallIcon
+                if (l.locked) toast(R.string.layer_locked) else editor.deleteLayer(l)
             }, LinearLayout.LayoutParams(dp(44), bs))
             buttons.addView(r1)
             buttons.addView(r2)
@@ -1680,21 +1739,60 @@ class MainActivity : Activity(), EditorView.Listener {
 
             // drag the dots to move the layer up or down
             var startY = 0f
+            var startScroll = 0
+            var target = pos
+            var mine = false
             handle.setOnTouchListener { v, e ->
                 when (e.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
+                        if (layerDragActive || all.size < 2) return@setOnTouchListener false
+                        mine = true
+                        layerDragActive = true
                         v.parent.requestDisallowInterceptTouchEvent(true)
                         startY = e.rawY
+                        startScroll = scroll.scrollY
+                        target = pos
                         item.elevation = dp(10).toFloat()
-                        item.alpha = 0.9f
+                        item.alpha = 0.92f
                     }
-                    MotionEvent.ACTION_MOVE -> item.translationY = e.rawY - startY
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        val shift = (item.translationY / (itemH + margin)).roundToInt()
-                        item.translationY = 0f
-                        item.elevation = 0f
-                        val newPos = (pos + shift).coerceIn(0, all.size - 1)
-                        if (newPos != pos) editor.moveLayerTo(l, all.size - 1 - newPos) else rebuildLayers()
+                    MotionEvent.ACTION_MOVE -> if (mine) {
+                        // scroll the list when the row is pulled to its top or bottom edge
+                        val loc = IntArray(2)
+                        scroll.getLocationOnScreen(loc)
+                        val edge = dp(48)
+                        if (e.rawY < loc[1] + edge) scroll.scrollBy(0, -dp(12))
+                        else if (e.rawY > loc[1] + scroll.height - edge) scroll.scrollBy(0, dp(12))
+                        // the row never leaves the list, so it can't disappear
+                        val raw = (e.rawY - startY) + (scroll.scrollY - startScroll)
+                        val dy = raw.coerceIn(-pos * step, (all.size - 1 - pos) * step)
+                        item.translationY = dy
+                        val t = (pos + (dy / step).roundToInt()).coerceIn(0, all.size - 1)
+                        if (t != target) {
+                            target = t
+                            // make room: the rows in between slide one place
+                            for (i in rows.indices) {
+                                if (i == pos) continue
+                                val shift = when {
+                                    t > pos && i in (pos + 1)..t -> -step
+                                    t < pos && i in t until pos -> step
+                                    else -> 0f
+                                }
+                                rows[i].animate().translationY(shift).setDuration(120).start()
+                            }
+                        }
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (mine) {
+                        mine = false
+                        val newPos = target
+                        // apply after this touch has finished, never while the row is handling it
+                        item.post {
+                            layerDragActive = false
+                            layersRebuildPending = false
+                            if (newPos != pos && editor.layers.contains(l)) {
+                                editor.moveLayerTo(l, all.size - 1 - newPos)
+                            }
+                            rebuildLayers()
+                        }
                     }
                 }
                 true
@@ -1703,6 +1801,7 @@ class MainActivity : Activity(), EditorView.Listener {
             val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, itemH)
             lp.setMargins(0, margin, 0, 0)
             list.addView(item, lp)
+            rows.add(item)
         }
         applyUiFont(layersBox)
     }

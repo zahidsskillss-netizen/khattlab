@@ -263,4 +263,17 @@
     <string name="ab_share_text">که نوښتګر مو خوښ شو، له ملګرو سره یې شریک کړئ.</string>
     <string name="ab_share_now">همدا اوس شریک کړئ</string>
     <string name="ab_share_msg">نوښتګر: پر عکسونو د پښتو متن او ډیزاین اپ. له دې ځایه یې ښکته کړئ:</string>
+    <!-- layers -->
+    <string name="layer_locked">دا لیر لاک دی؛ لومړی یې خلاص کړئ</string>
+
+    <!-- test version (10 days) -->
+    <string name="trial_end_t">د ازمېښتي نسخې موده پای ته ورسېده</string>
+    <string name="trial_end_text">د نوښتګر د دې ازمېښتي نسخې لس ورځې پوره شوې. ډېر ژر به د دې برنامې اصلي او رسمي نسخه په Play Store کې خپره شي. هیله ده زموږ ټلګرام چینل تعقیب کړئ، هلته به موږ لینک درکړو.</string>
+    <string name="trial_feedback">هیله ده خپل نظریات او وړاندیزونه د دې برنامې په اړه له موږ سره شریک کړئ.</string>
+    <string name="trial_close">بندول</string>
+    <string name="trial_left">د ازمېښتي نسخې پاتې ورځې: %1$d</string>
+    <string name="tg_channel">ټلګرام چینل</string>
+    <string name="tg_ghora">غوره ګرافیکس پروډکشن ټلګرام</string>
+    <string name="ab_feedback_t">نظر او وړاندیز</string>
+    <string name="ab_test_text">دا د نوښتګر ازمېښتي نسخه ده او لس ورځې کار کوي. اصلي او رسمي نسخه به ډېر ژر په Play Store کې خپره شي؛ لینک به یې زموږ په ټلګرام چینل کې درکړو.</string>
 </resources>
