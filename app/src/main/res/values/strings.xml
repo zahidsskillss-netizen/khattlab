@@ -183,4 +183,35 @@
     <string name="p_rot_z">Z محور</string>
     <string name="p_light">د رڼا شبیه‌سازي</string>
     <string name="p_light_angle">د رڼا زاویه</string>
+    <!-- layers, shapes, drawing -->
+    <string name="t_layers">لېیرونه</string>
+    <string name="layers_empty">لا څه نشته. متن، عکس یا شکل زیات کړئ.</string>
+    <string name="t_shapes">شکلونه</string>
+    <string name="t_draw">رسامي</string>
+    <string name="t_vector">وکټور قلم</string>
+    <string name="t_stickers">سټیکرونه</string>
+    <string name="t_fill">ډکول</string>
+    <string name="t_shape_form">بڼه</string>
+    <string name="t_thickness">پلنوالی</string>
+    <string name="p_none">هیڅ</string>
+    <string name="p_fill">دننه رنګ</string>
+    <string name="p_width_px">پلنوالی</string>
+    <string name="p_height_px">لوړوالی</string>
+    <string name="p_points">کونجونه</string>
+    <string name="p_inner">دننه اندازه</string>
+    <string name="p_change_shape">شکل بدلول</string>
+    <string name="p_pick_shape">یو شکل وټاکئ</string>
+    <string name="p_line_solid">ټینګه کرښه</string>
+    <string name="p_line_dashed">ټوټه ټوټه</string>
+    <string name="p_brush">برش</string>
+    <string name="b_pen">قلم</string>
+    <string name="b_marker">مارکر</string>
+    <string name="b_neon">نیون</string>
+    <string name="b_dash">ټوټه کرښه</string>
+    <string name="b_spray">سپری</string>
+    <string name="b_calligraphy">خطاطي</string>
+    <string name="p_open_line">خلاصه کرښه</string>
+    <string name="p_closed_shape">تړلی شکل</string>
+    <string name="vector_hint">پر پاڼه کېکاږئ چې ټکي زیات شي؛ ټکی کش کړئ چې کږه شي</string>
+    <string name="draw_start_hint">د رسامي لپاره «رسامي» تڼۍ کېکاږئ</string>
 </resources>

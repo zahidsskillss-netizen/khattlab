@@ -8,51 +8,59 @@
     android:orientation="vertical">
 
     <LinearLayout
+        android:id="@+id/top_bar"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="60dp"
         android:background="@color/bar"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="16dp"
+        android:paddingStart="14dp"
         android:paddingEnd="8dp">
 
         <TextView
+            android:id="@+id/title"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:maxLines="1"
             android:text="@string/app_name"
             android:textColor="@color/gold"
-            android:textSize="20sp"
-            android:textStyle="bold" />
+            android:textSize="19sp" />
 
-        <TextView
+        <ImageView
+            android:id="@+id/btn_layers"
+            style="@style/TopIcon"
+            android:contentDescription="@string/t_layers"
+            android:src="@drawable/ic_layers" />
+
+        <ImageView
             android:id="@+id/btn_undo"
-            style="@style/TopButton"
+            style="@style/TopIcon"
             android:contentDescription="@string/undo"
-            android:text="↶" />
+            android:src="@drawable/ic_undo" />
 
-        <TextView
+        <ImageView
             android:id="@+id/btn_redo"
-            style="@style/TopButton"
+            style="@style/TopIcon"
             android:contentDescription="@string/redo"
-            android:text="↷" />
+            android:src="@drawable/ic_redo" />
 
-        <TextView
+        <ImageView
             android:id="@+id/btn_grid"
-            style="@style/TopButton"
+            style="@style/TopIcon"
             android:contentDescription="@string/grid"
-            android:text="#" />
+            android:src="@drawable/ic_grid_on" />
 
-        <TextView
+        <ImageView
             android:id="@+id/btn_share"
-            style="@style/TopButton"
-            android:text="@string/share"
-            android:textSize="14sp" />
+            style="@style/TopIcon"
+            android:contentDescription="@string/share"
+            android:src="@drawable/ic_share" />
 
         <TextView
             android:id="@+id/btn_save"
             android:layout_width="wrap_content"
-            android:layout_height="36dp"
+            android:layout_height="40dp"
             android:layout_marginStart="6dp"
             android:background="@drawable/save_button"
             android:gravity="center"
@@ -60,16 +68,35 @@
             android:paddingEnd="16dp"
             android:text="@string/save"
             android:textColor="@color/bar"
-            android:textSize="14sp"
-            android:textStyle="bold" />
+            android:textSize="15sp" />
     </LinearLayout>
 
-    <com.ghoragraphics.khattlab.EditorView
-        android:id="@+id/editor"
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:background="@color/canvas_bg" />
+        android:layout_weight="1">
+
+        <com.ghoragraphics.khattlab.EditorView
+            android:id="@+id/editor"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/canvas_bg" />
+
+        <LinearLayout
+            android:id="@+id/layers_overlay"
+            android:layout_width="280dp"
+            android:layout_height="match_parent"
+            android:layout_gravity="start"
+            android:background="@color/layers_bg"
+            android:elevation="8dp"
+            android:orientation="vertical"
+            android:visibility="gone" />
+    </FrameLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/divider" />
 
     <FrameLayout
         android:id="@+id/panel_host"
@@ -81,7 +108,8 @@
     <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/bar"
+        android:background="@color/tools"
+        android:elevation="4dp"
         android:scrollbars="none">
 
         <LinearLayout

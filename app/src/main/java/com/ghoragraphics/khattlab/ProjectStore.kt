@@ -92,6 +92,8 @@ class ProjectStore(ctx: Context) {
                     arr.put(o)
                 }
                 is ImageLayer -> if (!l.bitmap.isRecycled) arr.put(l.toJson(fileFor(l.bitmap, false)))
+                is ShapeLayer -> arr.put(l.toJson())
+                is PathLayer -> arr.put(l.toJson())
             }
         }
         j.put("layers", arr)
@@ -160,6 +162,8 @@ class ProjectStore(ctx: Context) {
                 when (o.optString("type")) {
                     "text" -> layers.add(TextLayer.fromJson(o, pic(o.optString("textureFile", ""))))
                     "image" -> pic(o.optString("file"))?.let { layers.add(ImageLayer.fromJson(o, it)) }
+                    "shape" -> layers.add(ShapeLayer.fromJson(o))
+                    "path" -> layers.add(Stroke.fromJsonLayer(o))
                 }
             }
             synchronized(this) { written[id] = map }

@@ -36,7 +36,28 @@ class EditorView @JvmOverloads constructor(
         fun onSelectionChanged(layer: Layer?)
         fun onEditRequest(layer: Layer)
         fun onHistoryChanged()
+        fun onDrawChanged() {}
     }
+
+    /** Hand drawing (vector = false) or the vector pen (vector = true) in progress. */
+    class DrawSession(val vector: Boolean) {
+        val strokes = mutableListOf<Stroke>()
+        var current: Stroke? = null
+        var color = Color.BLACK
+        var width = 12f
+        var brush = Stroke.BRUSH_PEN
+        var closed = false
+        var fill = Color.TRANSPARENT
+
+        fun newStroke(x: Float, y: Float) =
+            Stroke(floatArrayOf(x, y), color, width, brush, vector, closed, fill)
+    }
+
+    var drawing: DrawSession? = null
+        private set
+    private var dragPoint = -1
+    private val penPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val pointPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     lateinit var fonts: FontManager
     var listener: Listener? = null
@@ -296,8 +317,99 @@ class EditorView @JvmOverloads constructor(
         invalidate()
     }
 
+    // ---------- layers list ----------
+
+    fun selectFromList(l: Layer) {
+        select(l)
+    }
+
+    /** Moves a layer to a new place in the stack (0 = bottom). */
+    fun moveLayerTo(l: Layer, to: Int) {
+        val from = layers.indexOf(l)
+        val t = to.coerceIn(0, layers.size - 1)
+        if (from < 0 || from == t) return
+        commit()
+        layers.removeAt(from)
+        layers.add(t, l)
+        invalidate()
+    }
+
+    fun setLocked(l: Layer, on: Boolean) {
+        commit()
+        l.locked = on
+        invalidate()
+    }
+
+    fun setHidden(l: Layer, on: Boolean) {
+        commit()
+        l.hidden = on
+        if (on && selected === l) select(null)
+        invalidate()
+    }
+
+    fun deleteLayer(l: Layer) {
+        if (!layers.contains(l)) return
+        commit()
+        layers.remove(l)
+        if (selected === l) select(null) else invalidate()
+    }
+
+    fun addShape(kind: Int) {
+        commit()
+        val side = min(doc.width, doc.height) * 0.4f
+        val l = ShapeLayer(kind, doc.width / 2f, doc.height / 2f)
+        l.w = side
+        l.h = if (ShapeLayer.isLine(kind)) side * 0.18f else if (kind == ShapeLayer.ARROW) side * 0.55f else if (kind == ShapeLayer.HALF_CIRCLE) side / 2f else side
+        if (ShapeLayer.isLine(kind)) l.strokeWidth = side * 0.035f
+        l.fillColor = if (Color.luminance(doc.color) > 0.5f || doc.bitmap != null) 0xFFE8B547.toInt() else Color.WHITE
+        layers.add(l)
+        select(l)
+    }
+
+    // ---------- drawing ----------
+
+    fun startDrawing(vector: Boolean): DrawSession {
+        select(null)
+        val d = DrawSession(vector)
+        d.width = max(doc.width, doc.height) * 0.012f
+        d.color = if (Color.luminance(doc.color) > 0.5f && doc.bitmap == null) Color.BLACK else Color.WHITE
+        drawing = d
+        invalidate()
+        return d
+    }
+
+    /** Removes the last line (hand drawing) or the last point (vector pen). */
+    fun undoDrawStep() {
+        val d = drawing ?: return
+        if (d.vector) {
+            val c = d.current ?: return
+            if (c.pts.size <= 2) d.current = null else c.pts = c.pts.copyOf(c.pts.size - 2)
+        } else if (d.strokes.isNotEmpty()) {
+            d.strokes.removeAt(d.strokes.size - 1)
+        }
+        listener?.onDrawChanged()
+        invalidate()
+    }
+
+    /** Ends drawing; keep = true turns what was drawn into a layer. */
+    fun finishDrawing(keep: Boolean) {
+        val d = drawing ?: return
+        drawing = null
+        val list = d.strokes.toMutableList()
+        d.current?.let { if (d.vector && it.pts.size >= 4) list.add(it) }
+        if (keep) {
+            val l = PathLayer.fromPageStrokes(list)
+            if (l != null) {
+                commit()
+                layers.add(l)
+                select(l)
+            }
+        }
+        invalidate()
+    }
+
     /** True when the page has nothing on it yet. */
-    fun isBlank() = layers.isEmpty() && doc.bitmap == null
+    fun isBlank() = layers.isEmpty() && doc.bitmap == null && drawing == null
 
     /** Puts an opened project on the page. Undo history starts fresh. */
     fun loadDoc(d: DocBackground, list: List<Layer>) {
@@ -351,7 +463,7 @@ class EditorView @JvmOverloads constructor(
         } else {
             canvas.drawColor(doc.color)
         }
-        for (l in layers) l.draw(canvas, fonts)
+        for (l in layers) if (!l.hidden) l.draw(canvas, fonts)
     }
 
     private fun selectionCorners(s: Layer) {
@@ -371,6 +483,10 @@ class EditorView @JvmOverloads constructor(
         canvas.scale(fit, fit)
         canvas.clipRect(0f, 0f, doc.width.toFloat(), doc.height.toFloat())
         drawDoc(canvas)
+        drawing?.let { d ->
+            for (st in d.strokes) Stroke.draw(canvas, st, penPaint)
+            d.current?.let { Stroke.draw(canvas, it, penPaint) }
+        }
         canvas.restore()
 
         val l = offX
@@ -387,7 +503,27 @@ class EditorView @JvmOverloads constructor(
             }
         }
 
+        drawing?.let { d ->
+            // points of the vector pen
+            val c = d.current ?: return
+            if (!d.vector) return
+            val p = c.pts
+            for (i in 0 until p.size / 2) {
+                val vx = offX + p[2 * i] * fit
+                val vy = offY + p[2 * i + 1] * fit
+                pointPaint.style = Paint.Style.FILL
+                pointPaint.color = if (i == 0) gold else Color.WHITE
+                canvas.drawCircle(vx, vy, 8f * density, pointPaint)
+                pointPaint.style = Paint.Style.STROKE
+                pointPaint.strokeWidth = 2f * density
+                pointPaint.color = 0xFF1E88E5.toInt()
+                canvas.drawCircle(vx, vy, 8f * density, pointPaint)
+            }
+            return
+        }
+
         val s = selected ?: return
+        if (s.hidden) return
         selectionCorners(s)
         selPath.reset()
         selPath.moveTo(corners[0], corners[1])
@@ -396,6 +532,7 @@ class EditorView @JvmOverloads constructor(
         selPath.lineTo(corners[6], corners[7])
         selPath.close()
         canvas.drawPath(selPath, selPaint)
+        if (s.locked) return
         val ty = (handleText.descent() + handleText.ascent()) / 2f
         for (i in 0 until 4) {
             val hx = corners[2 * i]
@@ -414,7 +551,9 @@ class EditorView @JvmOverloads constructor(
     private fun hitTest(dx: Float, dy: Float): Layer? {
         val slop = 10f * density / fit
         for (i in layers.indices.reversed()) {
-            if (layers[i].contains(dx, dy, fonts, slop)) return layers[i]
+            val l = layers[i]
+            if (l.hidden || l.locked) continue
+            if (l.contains(dx, dy, fonts, slop)) return l
         }
         return null
     }
@@ -422,6 +561,7 @@ class EditorView @JvmOverloads constructor(
     /** Which corner handle (0..3) is under the finger, or -1. */
     private fun hitHandle(vx: Float, vy: Float): Int {
         val s = selected ?: return -1
+        if (s.locked || s.hidden) return -1
         selectionCorners(s)
         for (i in 0 until 4) {
             if (hypot(vx - corners[2 * i], vy - corners[2 * i + 1]) <= handleR * 1.7f) return i
@@ -452,7 +592,69 @@ class EditorView @JvmOverloads constructor(
     private fun centerVX(s: Layer) = offX + s.x * fit
     private fun centerVY(s: Layer) = offY + s.y * fit
 
+    private fun drawTouch(d: DrawSession, e: MotionEvent): Boolean {
+        val x = toDocX(e.x)
+        val y = toDocY(e.y)
+        if (!d.vector) {
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> d.current = d.newStroke(x, y)
+                MotionEvent.ACTION_MOVE -> {
+                    val c = d.current ?: return true
+                    val p = c.pts
+                    if (hypot(x - p[p.size - 2], y - p[p.size - 1]) * fit >= 2f * density) {
+                        c.pts = p.copyOf(p.size + 2).also { it[p.size] = x; it[p.size + 1] = y }
+                    }
+                }
+                MotionEvent.ACTION_UP -> {
+                    d.current?.let { d.strokes.add(it) }
+                    d.current = null
+                    listener?.onDrawChanged()
+                }
+                MotionEvent.ACTION_CANCEL -> d.current = null
+            }
+            invalidate()
+            return true
+        }
+        // vector pen: tap adds a point, drag moves the nearest point
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downVX = e.x; downVY = e.y; moved = false
+                dragPoint = -1
+                val c = d.current
+                if (c != null) {
+                    var best = 22f * density
+                    for (i in 0 until c.pts.size / 2) {
+                        val dd = hypot(offX + c.pts[2 * i] * fit - e.x, offY + c.pts[2 * i + 1] * fit - e.y)
+                        if (dd < best) { best = dd; dragPoint = i }
+                    }
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!moved && hypot(e.x - downVX, e.y - downVY) < touchSlop) return true
+                moved = true
+                val c = d.current
+                if (dragPoint >= 0 && c != null) {
+                    c.pts[2 * dragPoint] = x
+                    c.pts[2 * dragPoint + 1] = y
+                    invalidate()
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                if (!moved && dragPoint < 0) {
+                    val c = d.current
+                    if (c == null) d.current = d.newStroke(x, y)
+                    else c.pts = c.pts.copyOf(c.pts.size + 2).also { it[c.pts.size] = x; it[c.pts.size + 1] = y }
+                    listener?.onDrawChanged()
+                    invalidate()
+                }
+                dragPoint = -1
+            }
+        }
+        return true
+    }
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        drawing?.let { return drawTouch(it, e) }
         gestures.onTouchEvent(e)
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -484,7 +686,8 @@ class EditorView @JvmOverloads constructor(
 
                 val hit = hitTest(dx, dy)
                 if (hit != null && hit !== selected) select(hit)
-                if (selected != null) {
+                if (hit == null && selected?.locked == true) select(null)
+                if (selected != null && selected?.locked != true) {
                     // a selected layer moves wherever the finger is put down
                     mode = 1
                     lastX = dx
@@ -496,7 +699,7 @@ class EditorView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 val s = selected
-                if (s != null && e.pointerCount >= 2) {
+                if (s != null && !s.locked && e.pointerCount >= 2) {
                     mode = 2
                     startDist = spacing(e).coerceAtLeast(1f)
                     startAngle = angle(e)

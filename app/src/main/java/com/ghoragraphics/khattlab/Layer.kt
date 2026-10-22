@@ -36,6 +36,10 @@ abstract class Layer {
     var reflectGap = 0f
     var reflectAlpha = 130 // 0..255
 
+    // layers list
+    var locked = false     // can't be moved or picked on the page
+    var hidden = false     // not drawn, not saved in the picture
+
     protected var cW = 1f
     protected var cH = 1f
 
@@ -64,6 +68,7 @@ abstract class Layer {
         x = o.x; y = o.y; rotation = o.rotation; scale = o.scale; opacity = o.opacity
         perspH = o.perspH; perspV = o.perspV; rotX = o.rotX; rotY = o.rotY
         reflectSize = o.reflectSize; reflectGap = o.reflectGap; reflectAlpha = o.reflectAlpha
+        locked = o.locked; hidden = o.hidden
     }
 
     /** Place, size and shared effects, for saving a project. */
@@ -72,6 +77,7 @@ abstract class Layer {
         j.put("opacity", opacity)
         j.put("perspH", perspH.toDouble()); j.put("perspV", perspV.toDouble()); j.put("rotX", rotX.toDouble()); j.put("rotY", rotY.toDouble())
         j.put("reflectSize", reflectSize.toDouble()); j.put("reflectGap", reflectGap.toDouble()); j.put("reflectAlpha", reflectAlpha)
+        j.put("locked", locked); j.put("hidden", hidden)
     }
 
     fun readBase(j: org.json.JSONObject) {
@@ -80,6 +86,7 @@ abstract class Layer {
         opacity = j.optInt("opacity", 255)
         perspH = f("perspH", 0f); perspV = f("perspV", 0f); rotX = f("rotX", 0f); rotY = f("rotY", 0f)
         reflectSize = f("reflectSize", 0f); reflectGap = f("reflectGap", 0f); reflectAlpha = j.optInt("reflectAlpha", 130)
+        locked = j.optBoolean("locked", false); hidden = j.optBoolean("hidden", false)
     }
 
     private fun buildMatrix(out: Matrix) {

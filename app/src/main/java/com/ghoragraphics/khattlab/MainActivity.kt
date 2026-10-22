@@ -11,6 +11,12 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Shader
+import android.graphics.Typeface
+import android.graphics.drawable.BitmapDrawable
+import android.content.res.ColorStateList
+import android.view.MotionEvent
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -36,6 +42,8 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 class MainActivity : Activity(), EditorView.Listener {
@@ -56,13 +64,23 @@ class MainActivity : Activity(), EditorView.Listener {
             0xFF607D8B.toInt(), 0xFF263238.toInt(), 0xFF1B5E20.toInt(), 0xFF0D47A1.toInt()
         )
 
-        private val MAIN_PANELS = setOf("bgcolor", "canvas", "projects")
+        private val MAIN_PANELS = setOf("bgcolor", "canvas", "projects", "shapes", "stickers", "draw", "vector")
         private val COMMON_PANELS = setOf("position", "relpos", "size", "opacity", "rotate", "persp", "rot3d", "reflect")
         private val TEXT_PANELS = COMMON_PANELS + setOf(
             "styles", "font", "style", "color", "texture", "curve", "background", "align", "spacing",
             "stroke", "shadow", "inner", "emboss", "depth", "floor"
         )
         private val IMAGE_PANELS = COMMON_PANELS + setOf("flip", "round", "border", "imgshadow")
+        private val SHAPE_PANELS = COMMON_PANELS + setOf("sfill", "sstroke", "sform", "sshadow")
+        private val PATH_PANELS = COMMON_PANELS + setOf("pcolor", "pwidth")
+
+        private val STICKERS = (
+            "😀 😂 🤣 😍 🥰 😎 🤩 😇 🤔 😢 😭 😡 👍 👎 👏 🙏 💪 🤝 ✌️ 👌 " +
+            "❤️ 🧡 💛 💚 💙 💜 🖤 🤍 💔 💯 ✨ ⭐ 🌟 🔥 ⚡ 🌙 ☀️ 🌈 ☁️ ❄️ " +
+            "🌹 🌸 🌺 🌻 🌷 🍀 🌴 🌍 🕌 🕋 📿 🤲 🎉 🎁 🎂 🎈 🏆 🥇 🎵 📷 " +
+            "📌 📍 ✅ ❌ ⚠️ ➡️ ⬅️ ⬆️ ⬇️ 🔴 🟢 🔵 🟡 ⚪ ⚫ 🇦🇫 📢 💡 📞 ✉️"
+        ).split(" ").filter { it.isNotBlank() }
+
     }
 
     private lateinit var editor: EditorView
@@ -71,7 +89,7 @@ class MainActivity : Activity(), EditorView.Listener {
     private lateinit var panelHost: FrameLayout
     private lateinit var btnUndo: View
     private lateinit var btnRedo: View
-    private lateinit var btnGrid: TextView
+    private lateinit var btnGrid: ImageView
 
     private var activeTool: String? = null
     private var panelScroll: ScrollView? = null
@@ -82,12 +100,18 @@ class MainActivity : Activity(), EditorView.Listener {
     private var currentName = ""
     private var dirty = false
     private val gold = 0xFFE8B547.toInt()
-    private val textMain = 0xFFF2F2F5.toInt()
-    private val textDim = 0xFFA8A8B3.toInt()
-    private val chipBg = 0xFF2A2A30.toInt()
+    private val accent = 0xFFC8901A.toInt()      // active tool on the light bars
+    private val textMain = 0xFF202124.toInt()
+    private val textDim = 0xFF5F6368.toInt()
+    private val chipBg = 0xFFE6E6EB.toInt()
+    private val line = 0x22000000
+    private lateinit var uiFont: Typeface
+    private lateinit var layersBox: LinearLayout
 
     private val st: TextLayer? get() = editor.selected as? TextLayer
     private val si: ImageLayer? get() = editor.selected as? ImageLayer
+    private val ss: ShapeLayer? get() = editor.selected as? ShapeLayer
+    private val sp: PathLayer? get() = editor.selected as? PathLayer
 
     // ================= life cycle =================
 
@@ -106,13 +130,20 @@ class MainActivity : Activity(), EditorView.Listener {
         btnUndo = findViewById(R.id.btn_undo)
         btnRedo = findViewById(R.id.btn_redo)
         btnGrid = findViewById(R.id.btn_grid)
+        layersBox = findViewById(R.id.layers_overlay)
+        uiFont = try { Typeface.createFromAsset(assets, "ui/bahij_bold.ttf") } catch (e: Exception) { Typeface.DEFAULT_BOLD }
+        applyUiFont(findViewById(R.id.top_bar))
+        layersBox.layoutParams = layersBox.layoutParams.apply {
+            width = (resources.displayMetrics.widthPixels * 0.66f).roundToInt()
+        }
 
-        btnUndo.setOnClickListener { editor.undo() }
+        btnUndo.setOnClickListener { if (editor.drawing != null) editor.undoDrawStep() else editor.undo() }
         btnRedo.setOnClickListener { editor.redo() }
         btnGrid.setOnClickListener {
             editor.showGrid = !editor.showGrid
-            btnGrid.setTextColor(if (editor.showGrid) gold else textMain)
+            btnGrid.imageTintList = ColorStateList.valueOf(if (editor.showGrid) gold else 0xFFF2F2F5.toInt())
         }
+        findViewById<View>(R.id.btn_layers).setOnClickListener { toggleLayers() }
         findViewById<View>(R.id.btn_save).setOnClickListener { saveImage() }
         findViewById<View>(R.id.btn_share).setOnClickListener { shareImage() }
 
@@ -138,6 +169,8 @@ class MainActivity : Activity(), EditorView.Listener {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         when {
+            editor.drawing != null -> { editor.finishDrawing(true); closePanel() }
+            layersBox.visibility == View.VISIBLE -> hideLayers()
             activeTool != null -> closePanel()
             editor.selected != null -> editor.select(null)
             editor.layers.isNotEmpty() || editor.doc.bitmap != null -> {
@@ -157,10 +190,13 @@ class MainActivity : Activity(), EditorView.Listener {
         null -> key in MAIN_PANELS
         is TextLayer -> key in TEXT_PANELS
         is ImageLayer -> key in IMAGE_PANELS
+        is ShapeLayer -> key in SHAPE_PANELS
+        is PathLayer -> key in PATH_PANELS
         else -> false
     }
 
     override fun onSelectionChanged(layer: Layer?) {
+        if (layersBox.visibility == View.VISIBLE) rebuildLayers()
         val key = activeTool
         when {
             key == null -> refreshTools()
@@ -175,6 +211,7 @@ class MainActivity : Activity(), EditorView.Listener {
 
     override fun onHistoryChanged() {
         dirty = true
+        if (layersBox.visibility == View.VISIBLE) rebuildLayers()
         btnUndo.alpha = if (editor.canUndo()) 1f else 0.35f
         btnRedo.alpha = if (editor.canRedo()) 1f else 0.35f
     }
@@ -194,7 +231,7 @@ class MainActivity : Activity(), EditorView.Listener {
     private fun circle(color: Int, selected: Boolean) = GradientDrawable().apply {
         shape = GradientDrawable.OVAL
         setColor(color)
-        setStroke(dp(if (selected) 3 else 1), if (selected) gold else 0x55FFFFFF)
+        setStroke(dp(if (selected) 3 else 1), if (selected) accent else 0x33000000)
     }
 
     private fun pill(color: Int, strokeColor: Int) = GradientDrawable().apply {
@@ -207,113 +244,139 @@ class MainActivity : Activity(), EditorView.Listener {
     private fun ut(commit: Boolean = true, block: (TextLayer) -> Unit) =
         editor.update(commit) { if (it is TextLayer) block(it) }
 
+    private fun us(commit: Boolean = true, block: (ShapeLayer) -> Unit) =
+        editor.update(commit) { if (it is ShapeLayer) block(it) }
+
+    private fun up(commit: Boolean = true, block: (PathLayer) -> Unit) =
+        editor.update(commit) { if (it is PathLayer) block(it) }
+
     /** Change the selected picture. */
     private fun ui(commit: Boolean = true, block: (ImageLayer) -> Unit) =
         editor.update(commit) { if (it is ImageLayer) block(it) }
 
     // ================= bottom toolbar =================
 
-    private fun toolButton(key: String, glyph: String, labelRes: Int, onClick: () -> Unit): View {
+    private fun toolButton(key: String, icon: Int, labelRes: Int, onClick: () -> Unit): View {
         val active = key == activeTool
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            minimumWidth = dp(64)
-            setPadding(dp(6), dp(8), dp(6), dp(8))
+            minimumWidth = dp(78)
+            setPadding(dp(6), dp(10), dp(6), dp(8))
             background = ripple()
             isClickable = true
             isFocusable = true
         }
-        val g = TextView(this).apply {
-            text = glyph
-            textSize = 19f
-            gravity = Gravity.CENTER
-            setTextColor(if (active) gold else textMain)
+        val g = ImageView(this).apply {
+            setImageResource(icon)
+            imageTintList = ColorStateList.valueOf(if (active) accent else 0xFF5F6368.toInt())
         }
         val l = TextView(this).apply {
             setText(labelRes)
-            textSize = 11f
+            textSize = 13f
             gravity = Gravity.CENTER
             maxLines = 1
-            setTextColor(if (active) gold else textDim)
+            setTextColor(if (active) accent else textDim)
         }
-        box.addView(g)
+        box.addView(g, LinearLayout.LayoutParams(dp(30), dp(30)))
         box.addView(l)
         box.setOnClickListener { onClick() }
         return box
     }
 
-    private fun panelTool(key: String, glyph: String, labelRes: Int) =
-        toolButton(key, glyph, labelRes) { togglePanel(key) }
+    private fun panelTool(key: String, icon: Int, labelRes: Int) =
+        toolButton(key, icon, labelRes) { togglePanel(key) }
+
+    /** Sets the app's own font (Bahij TheSansArabic Bold) on every label under [v]. */
+    private fun applyUiFont(v: View) {
+        if (v.tag == "own_font") return
+        if (v is TextView) v.typeface = uiFont
+        if (v is ViewGroup) for (i in 0 until v.childCount) applyUiFont(v.getChildAt(i))
+    }
 
     /** Rebuilds the bottom toolbar for the page, a text, or a picture. */
     private fun refreshTools() {
-        val items = when (editor.selected) {
-            is TextLayer -> listOf(
-                panelTool("styles", "✦", R.string.t_styles),
-                toolButton("edit", "✎", R.string.t_edit) { st?.let { promptText(it) } },
-                toolButton("delete", "✕", R.string.t_delete) { editor.deleteSelected() },
-                toolButton("copy", "⧉", R.string.t_copy) { editor.duplicateSelected() },
-                toolButton("front", "⇡", R.string.t_to_front) { editor.moveSelected(true) },
-                toolButton("back", "⇣", R.string.t_to_back) { editor.moveSelected(false) },
-                panelTool("position", "✥", R.string.t_position),
-                panelTool("relpos", "⊞", R.string.t_relpos),
-                panelTool("size", "⤢", R.string.t_size),
-                panelTool("color", "●", R.string.t_color),
-                panelTool("texture", "▨", R.string.t_texture),
-                panelTool("opacity", "◌", R.string.t_opacity),
-                panelTool("rotate", "↻", R.string.t_rotate),
-                panelTool("font", "Aa", R.string.t_font),
-                panelTool("style", "B", R.string.t_style),
-                panelTool("curve", "⌒", R.string.t_curve),
-                panelTool("background", "▬", R.string.t_background),
-                panelTool("align", "≡", R.string.t_align),
-                panelTool("spacing", "↔", R.string.t_spacing),
-                panelTool("stroke", "◯", R.string.t_stroke),
-                panelTool("shadow", "◩", R.string.t_shadow),
-                panelTool("inner", "◘", R.string.t_inner_shadow),
-                panelTool("emboss", "◍", R.string.t_emboss),
-                panelTool("persp", "⏢", R.string.t_perspective),
-                panelTool("rot3d", "⟲", R.string.t_rotate3d),
-                panelTool("depth", "3D", R.string.t_text3d),
-                panelTool("floor", "▱", R.string.t_shadow3d),
-                panelTool("reflect", "⊥", R.string.t_reflection),
-                toolButton("done", "✓", R.string.t_done) { editor.select(null) }
+        val common = listOf(
+            panelTool("position", R.drawable.ic_open_with, R.string.t_position),
+            panelTool("relpos", R.drawable.ic_align_horizontal_center, R.string.t_relpos),
+            panelTool("size", R.drawable.ic_open_in_full, R.string.t_size),
+            panelTool("opacity", R.drawable.ic_opacity, R.string.t_opacity),
+            panelTool("rotate", R.drawable.ic_rotate_right, R.string.t_rotate)
+        )
+        val arrange = listOf(
+            toolButton("delete", R.drawable.ic_delete, R.string.t_delete) { editor.deleteSelected() },
+            toolButton("copy", R.drawable.ic_content_copy, R.string.t_copy) { editor.duplicateSelected() },
+            toolButton("front", R.drawable.ic_flip_to_front, R.string.t_to_front) { editor.moveSelected(true) },
+            toolButton("back", R.drawable.ic_flip_to_back, R.string.t_to_back) { editor.moveSelected(false) }
+        )
+        val tail = listOf(
+            panelTool("persp", R.drawable.ic_crop_rotate, R.string.t_perspective),
+            panelTool("rot3d", R.drawable.ic_three_d_rotation, R.string.t_rotate3d),
+            panelTool("reflect", R.drawable.ic_flip, R.string.t_reflection),
+            toolButton("done", R.drawable.ic_check, R.string.t_done) { editor.select(null) }
+        )
+        val items = when {
+            editor.drawing != null -> listOf(
+                toolButton("dok", R.drawable.ic_check, R.string.t_done) { editor.finishDrawing(true); closePanel() },
+                toolButton("dundo", R.drawable.ic_undo, R.string.undo) { editor.undoDrawStep() },
+                toolButton("dcancel", R.drawable.ic_close, R.string.cancel) { editor.finishDrawing(false); closePanel() }
             )
-            is ImageLayer -> listOf(
-                toolButton("replace", "⇄", R.string.t_replace) { pick(REQ_REPLACE) },
-                toolButton("delete", "✕", R.string.t_delete) { editor.deleteSelected() },
-                toolButton("copy", "⧉", R.string.t_copy) { editor.duplicateSelected() },
-                toolButton("front", "⇡", R.string.t_to_front) { editor.moveSelected(true) },
-                toolButton("back", "⇣", R.string.t_to_back) { editor.moveSelected(false) },
-                panelTool("position", "✥", R.string.t_position),
-                panelTool("relpos", "⊞", R.string.t_relpos),
-                panelTool("size", "⤢", R.string.t_size),
-                panelTool("opacity", "◌", R.string.t_opacity),
-                panelTool("rotate", "↻", R.string.t_rotate),
-                panelTool("flip", "⇋", R.string.t_flip),
-                panelTool("round", "▢", R.string.t_round),
-                panelTool("border", "◯", R.string.t_border),
-                panelTool("imgshadow", "◩", R.string.t_shadow),
-                panelTool("persp", "⏢", R.string.t_perspective),
-                panelTool("rot3d", "⟲", R.string.t_rotate3d),
-                panelTool("reflect", "⊥", R.string.t_reflection),
-                toolButton("done", "✓", R.string.t_done) { editor.select(null) }
-            )
+            editor.selected is TextLayer -> listOf(
+                panelTool("styles", R.drawable.ic_auto_awesome, R.string.t_styles),
+                toolButton("edit", R.drawable.ic_edit, R.string.t_edit) { st?.let { promptText(it) } },
+                panelTool("font", R.drawable.ic_font_download, R.string.t_font),
+                panelTool("color", R.drawable.ic_palette, R.string.t_color),
+                panelTool("depth", R.drawable.ic_view_in_ar, R.string.t_text3d)
+            ) + arrange + common + listOf(
+                panelTool("texture", R.drawable.ic_texture, R.string.t_texture),
+                panelTool("style", R.drawable.ic_format_bold, R.string.t_style),
+                panelTool("curve", R.drawable.ic_looks, R.string.t_curve),
+                panelTool("background", R.drawable.ic_highlight, R.string.t_background),
+                panelTool("align", R.drawable.ic_format_align_center, R.string.t_align),
+                panelTool("spacing", R.drawable.ic_format_line_spacing, R.string.t_spacing),
+                panelTool("stroke", R.drawable.ic_radio_button_unchecked, R.string.t_stroke),
+                panelTool("shadow", R.drawable.ic_filter_none, R.string.t_shadow),
+                panelTool("inner", R.drawable.ic_blur_on, R.string.t_inner_shadow),
+                panelTool("emboss", R.drawable.ic_terrain, R.string.t_emboss),
+                panelTool("floor", R.drawable.ic_dehaze, R.string.t_shadow3d)
+            ) + tail
+            editor.selected is ImageLayer -> listOf(
+                toolButton("replace", R.drawable.ic_swap_horiz, R.string.t_replace) { pick(REQ_REPLACE) }
+            ) + arrange + common + listOf(
+                panelTool("flip", R.drawable.ic_flip, R.string.t_flip),
+                panelTool("round", R.drawable.ic_rounded_corner, R.string.t_round),
+                panelTool("border", R.drawable.ic_border_outer, R.string.t_border),
+                panelTool("imgshadow", R.drawable.ic_filter_none, R.string.t_shadow)
+            ) + tail
+            editor.selected is ShapeLayer -> listOf(
+                panelTool("sfill", R.drawable.ic_format_color_fill, R.string.t_fill),
+                panelTool("sstroke", R.drawable.ic_border_color, R.string.t_stroke),
+                panelTool("sform", R.drawable.ic_tune, R.string.t_shape_form),
+                panelTool("sshadow", R.drawable.ic_filter_none, R.string.t_shadow)
+            ) + arrange + common + tail
+            editor.selected is PathLayer -> listOf(
+                panelTool("pcolor", R.drawable.ic_palette, R.string.t_color),
+                panelTool("pwidth", R.drawable.ic_line_weight, R.string.t_thickness)
+            ) + arrange + common + tail
             else -> listOf(
-                panelTool("projects", "▦", R.string.t_projects),
-                toolButton("add", "T+", R.string.t_add_text) { promptText(null) },
-                toolButton("addimg", "▣+", R.string.t_add_image) { pick(REQ_ADD_IMAGE) },
-                toolButton("photo", "▣", R.string.t_photo) { pick(REQ_BG_IMAGE) },
-                panelTool("bgcolor", "◐", R.string.t_bg_color),
-                panelTool("canvas", "⬚", R.string.t_canvas),
-                toolButton("import", "Aa+", R.string.t_import_font) { importFont() },
-                toolButton("new", "✦", R.string.t_new) { confirmNew() },
-                toolButton("about", "ⓘ", R.string.t_about) { showAbout() }
+                panelTool("projects", R.drawable.ic_folder, R.string.t_projects),
+                toolButton("add", R.drawable.ic_text_fields, R.string.t_add_text) { promptText(null) },
+                toolButton("addimg", R.drawable.ic_add_photo_alternate, R.string.t_add_image) { pick(REQ_ADD_IMAGE) },
+                panelTool("shapes", R.drawable.ic_category, R.string.t_shapes),
+                toolButton("draw", R.drawable.ic_brush, R.string.t_draw) { startDraw(false) },
+                toolButton("vector", R.drawable.ic_polyline, R.string.t_vector) { startDraw(true) },
+                panelTool("stickers", R.drawable.ic_emoji_emotions, R.string.t_stickers),
+                toolButton("photo", R.drawable.ic_wallpaper, R.string.t_photo) { pick(REQ_BG_IMAGE) },
+                panelTool("bgcolor", R.drawable.ic_format_color_fill, R.string.t_bg_color),
+                panelTool("canvas", R.drawable.ic_aspect_ratio, R.string.t_canvas),
+                toolButton("import", R.drawable.ic_font_download, R.string.t_import_font) { importFont() },
+                toolButton("new", R.drawable.ic_note_add, R.string.t_new) { confirmNew() },
+                toolButton("about", R.drawable.ic_info, R.string.t_about) { showAbout() }
             )
         }
         tools.removeAllViews()
         items.forEach { tools.addView(it) }
+        applyUiFont(tools)
     }
 
     // ================= option panels =================
@@ -332,8 +395,8 @@ class MainActivity : Activity(), EditorView.Listener {
     private fun label(res: Int): View = TextView(this).apply {
         setText(res)
         setTextColor(textDim)
-        textSize = 12f
-        setPadding(0, dp(4), 0, dp(2))
+        textSize = 14f
+        setPadding(0, dp(6), 0, dp(2))
     }
 
     private fun openPanel(key: String) {
@@ -365,6 +428,122 @@ class MainActivity : Activity(), EditorView.Listener {
             }
 
             "projects" -> buildProjectsPanel(box)
+
+            "shapes" -> buildShapesPanel(box)
+
+            "stickers" -> buildStickersPanel(box)
+
+            "draw", "vector" -> buildDrawPanel(box, key == "vector")
+
+            // ---------- shape ----------
+            "sfill" -> ss?.let { sh ->
+                box.addView(chipRow(listOf(getString(R.string.p_solid), getString(R.string.p_gradient), getString(R.string.p_none)), sh.fillMode) { i ->
+                    us { it.fillMode = i }
+                    openPanel("sfill")
+                })
+                when (sh.fillMode) {
+                    0 -> box.addView(swatchRow(sh.fillColor, false) { c -> us { it.fillColor = c } })
+                    1 -> {
+                        box.addView(label(R.string.p_color1))
+                        box.addView(swatchRow(sh.gradColor1, false) { c -> us { it.gradColor1 = c } })
+                        box.addView(label(R.string.p_color2))
+                        box.addView(swatchRow(sh.gradColor2, false) { c -> us { it.gradColor2 = c } })
+                        box.addView(slider(R.string.p_angle, 0, 359, sh.gradAngle.roundToInt(), { "$it°" }) { v ->
+                            us(false) { it.gradAngle = v.toFloat() }
+                        })
+                    }
+                }
+            }
+
+            "sstroke" -> ss?.let { sh ->
+                box.addView(slider(R.string.p_width, 0, 120, sh.strokeWidth.roundToInt(), { "$it" }) { v ->
+                    us(false) { it.strokeWidth = v.toFloat() }
+                })
+                box.addView(swatchRow(sh.strokeColor, false) { c ->
+                    us {
+                        it.strokeColor = c
+                        if (it.strokeWidth <= 0f) it.strokeWidth = 10f
+                    }
+                    openPanel("sstroke")
+                })
+                box.addView(chipRow(listOf(getString(R.string.p_line_solid), getString(R.string.p_line_dashed)), if (sh.dashed) 1 else 0) { i ->
+                    us { it.dashed = i == 1 }
+                    openPanel("sstroke")
+                })
+            }
+
+            "sform" -> ss?.let { sh ->
+                val mx = (max(editor.doc.width, editor.doc.height) * 1.5f).roundToInt()
+                box.addView(slider(R.string.p_width_px, 4, mx, sh.w.roundToInt(), { "$it" }) { v ->
+                    us(false) { it.w = v.toFloat() }
+                })
+                box.addView(slider(R.string.p_height_px, 4, mx, sh.h.roundToInt(), { "$it" }) { v ->
+                    us(false) { it.h = v.toFloat() }
+                })
+                if (sh.kind == ShapeLayer.ROUND_RECT || sh.kind == ShapeLayer.BUBBLE) {
+                    box.addView(slider(R.string.p_round, 0, 100, sh.corner.roundToInt(), { "$it%" }) { v ->
+                        us(false) { it.corner = v.toFloat() }
+                    })
+                }
+                if (sh.kind == ShapeLayer.STAR || sh.kind == ShapeLayer.POLYGON || sh.kind == ShapeLayer.BURST) {
+                    box.addView(slider(R.string.p_points, 3, 16, sh.points, { "$it" }) { v ->
+                        us(false) { it.points = v }
+                    })
+                }
+                if (sh.kind == ShapeLayer.STAR || sh.kind == ShapeLayer.RING) {
+                    box.addView(slider(R.string.p_inner, 10, 95, sh.inner.roundToInt(), { "$it%" }) { v ->
+                        us(false) { it.inner = v.toFloat() }
+                    })
+                }
+                box.addView(label(R.string.p_change_shape))
+                box.addView(shapeGrid(sh.kind) { k -> us { it.kind = k }; openPanel("sform") })
+            }
+
+            "sshadow" -> ss?.let { sh ->
+                box.addView(slider(R.string.p_blur, 0, 80, sh.shadowRadius.roundToInt(), { "$it" }) { v ->
+                    us(false) { it.shadowRadius = v.toFloat() }
+                })
+                box.addView(slider(R.string.p_offset_x, -80, 80, sh.shadowDx.roundToInt(), { "$it" }) { v ->
+                    us(false) { it.shadowDx = v.toFloat() }
+                })
+                box.addView(slider(R.string.p_offset_y, -80, 80, sh.shadowDy.roundToInt(), { "$it" }) { v ->
+                    us(false) { it.shadowDy = v.toFloat() }
+                })
+                box.addView(swatchRow(sh.shadowColor, false) { c ->
+                    us {
+                        it.shadowColor = (c and 0x00FFFFFF) or (0xAA shl 24)
+                        if (it.shadowRadius <= 0f && it.shadowDx == 0f && it.shadowDy == 0f) {
+                            it.shadowRadius = 20f
+                            it.shadowDy = 8f
+                        }
+                    }
+                    openPanel("sshadow")
+                })
+            }
+
+            // ---------- drawing layer ----------
+            "pcolor" -> sp?.let { p ->
+                box.addView(swatchRow(p.mainColor, false) { c -> up { l -> l.strokes.forEach { it.color = c } } })
+                if (p.strokes.any { it.smooth }) {
+                    box.addView(label(R.string.p_fill))
+                    box.addView(swatchRow(p.strokes.firstOrNull { it.smooth }?.fill ?: 0, true) { c ->
+                        up { l -> l.strokes.forEach { if (it.smooth) it.fill = c } }
+                        openPanel("pcolor")
+                    })
+                }
+            }
+
+            "pwidth" -> sp?.let { p ->
+                val cur = p.strokes.maxOfOrNull { it.width } ?: 10f
+                val base = p.strokes.map { it.width }
+                val mx = (max(editor.doc.width, editor.doc.height) * 0.06f).roundToInt().coerceAtLeast(20)
+                box.addView(slider(R.string.p_width, 1, mx, cur.roundToInt(), { "$it" }) { v ->
+                    up(false) { l ->
+                        val k = v / cur.coerceAtLeast(0.1f)
+                        l.strokes.forEachIndexed { i, st -> st.width = ((base.getOrNull(i) ?: st.width) * k).coerceAtLeast(0.5f) }
+                    }
+                })
+            }
 
             // ---------- any layer ----------
             "position" -> if (s != null) {
@@ -405,6 +584,16 @@ class MainActivity : Activity(), EditorView.Listener {
                 box.addView(slider(R.string.p_size, 2, 800, (s.scale * 100).roundToInt(), { "$it%" }) { v ->
                     editor.update(false) { it.scale = v / 100f }
                 })
+                val sh = ss
+                if (sh != null) {
+                    val mx = (max(editor.doc.width, editor.doc.height) * 1.5f).roundToInt()
+                    box.addView(slider(R.string.p_width_px, 4, mx, sh.w.roundToInt(), { "$it" }) { v ->
+                        editor.update(false) { (it as? ShapeLayer)?.w = v.toFloat() }
+                    })
+                    box.addView(slider(R.string.p_height_px, 4, mx, sh.h.roundToInt(), { "$it" }) { v ->
+                        editor.update(false) { (it as? ShapeLayer)?.h = v.toFloat() }
+                    })
+                }
                 if (t != null) {
                     box.addView(slider(R.string.p_font_size, 8, 600, t.textSize.roundToInt(), { "$it" }) { v ->
                         ut(false) { it.textSize = v.toFloat() }
@@ -747,21 +936,22 @@ class MainActivity : Activity(), EditorView.Listener {
             // long panels scroll, so the page stays visible
             val sv = ScrollView(this).apply { isVerticalScrollBarEnabled = true }
             sv.addView(box)
-            panelHost.addView(sv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(290)))
+            panelHost.addView(sv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(300)))
             panelScroll = sv
             if (keepScroll > 0) sv.post { sv.scrollTo(0, keepScroll) }
         } else {
             panelHost.addView(box)
         }
+        applyUiFont(panelHost)
         panelHost.visibility = View.VISIBLE
         refreshTools()
     }
 
     private fun header(res: Int): View = TextView(this).apply {
         setText(res)
-        setTextColor(gold)
-        textSize = 14f
-        setPadding(0, dp(10), 0, dp(2))
+        setTextColor(accent)
+        textSize = 16f
+        setPadding(0, dp(12), 0, dp(2))
     }
 
     private fun onOff(on: Boolean, onPick: (Boolean) -> Unit): View =
@@ -822,7 +1012,7 @@ class MainActivity : Activity(), EditorView.Listener {
     private fun previewTile(bmp: Bitmap, onClick: () -> Unit, onLongClick: (() -> Unit)? = null): View {
         val iv = ImageView(this).apply {
             setImageBitmap(bmp)
-            background = pill(chipBg, 0x33FFFFFF)
+            background = pill(chipBg, line)
             setPadding(dp(2), dp(2), dp(2), dp(2))
             setOnClickListener { onClick() }
             if (onLongClick != null) setOnLongClickListener { onLongClick(); true }
@@ -897,11 +1087,11 @@ class MainActivity : Activity(), EditorView.Listener {
         val label = TextView(this).apply {
             setText(labelRes)
             setTextColor(textDim)
-            textSize = 13f
+            textSize = 14f
         }
         val valueText = TextView(this).apply {
             setTextColor(textMain)
-            textSize = 13f
+            textSize = 14f
             gravity = Gravity.CENTER
             text = format(value.coerceIn(min, max))
             textDirection = View.TEXT_DIRECTION_LTR
@@ -909,6 +1099,10 @@ class MainActivity : Activity(), EditorView.Listener {
         val bar = SeekBar(this).apply {
             this.max = max - min
             progress = value.coerceIn(min, max) - min
+            progressTintList = ColorStateList.valueOf(gold)
+            thumbTintList = ColorStateList.valueOf(accent)
+            progressBackgroundTintList = ColorStateList.valueOf(0xFFBDBDC4.toInt())
+            minimumHeight = dp(40)
         }
         bar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onStartTrackingTouch(s: SeekBar) {
@@ -921,7 +1115,7 @@ class MainActivity : Activity(), EditorView.Listener {
                 if (fromUser) onChange(v)
             }
         })
-        row.addView(label, LinearLayout.LayoutParams(dp(84), ViewGroup.LayoutParams.WRAP_CONTENT))
+        row.addView(label, LinearLayout.LayoutParams(dp(100), ViewGroup.LayoutParams.WRAP_CONTENT))
         row.addView(bar, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         row.addView(valueText, LinearLayout.LayoutParams(dp(52), ViewGroup.LayoutParams.WRAP_CONTENT))
         return row
@@ -942,7 +1136,7 @@ class MainActivity : Activity(), EditorView.Listener {
 
     private fun swatchRow(current: Int, allowNone: Boolean, onPick: (Int) -> Unit): View {
         val (scroll, row) = horizontalRow()
-        val size = dp(34)
+        val size = dp(38)
         val margin = dp(5)
         val swatchViews = mutableListOf<Pair<View, Int>>()
         val currentOpaque = current or (0xFF shl 24)
@@ -997,11 +1191,11 @@ class MainActivity : Activity(), EditorView.Listener {
 
     private fun chip(name: String, on: Boolean, onClick: () -> Unit): TextView = TextView(this).apply {
         text = name
-        textSize = 14f
+        textSize = 15f
         gravity = Gravity.CENTER
-        setPadding(dp(16), dp(8), dp(16), dp(8))
+        setPadding(dp(18), dp(10), dp(18), dp(10))
         setTextColor(if (on) 0xFF141416.toInt() else textMain)
-        background = pill(if (on) gold else chipBg, if (on) gold else 0x33FFFFFF)
+        background = pill(if (on) gold else chipBg, if (on) gold else line)
         setOnClickListener { onClick() }
     }
 
@@ -1048,10 +1242,11 @@ class MainActivity : Activity(), EditorView.Listener {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
                 setPadding(dp(14), dp(6), dp(14), dp(6))
-                background = pill(if (on) 0xFF3A3220.toInt() else chipBg, if (on) gold else 0x33FFFFFF)
+                background = pill(if (on) 0xFFFFF1D0.toInt() else chipBg, if (on) gold else line)
                 setOnClickListener { ut { it.fontKey = f.key }; openPanel("font") }
             }
             item.addView(TextView(this).apply {
+                tag = "own_font"
                 text = getString(R.string.font_sample)
                 typeface = f.typeface
                 textSize = 18f
@@ -1123,7 +1318,8 @@ class MainActivity : Activity(), EditorView.Listener {
         val tv = TextView(this).apply {
             text = getString(R.string.about_text, version)
             textSize = 15f
-            setTextColor(textMain)
+            typeface = uiFont
+            setTextColor(0xFFF2F2F5.toInt())
             setLineSpacing(0f, 1.3f)
             setPadding(dp(24), dp(16), dp(24), dp(8))
             setTextIsSelectable(true)
@@ -1133,6 +1329,315 @@ class MainActivity : Activity(), EditorView.Listener {
             .setView(tv)
             .setPositiveButton(R.string.ok, null)
             .show()
+    }
+
+    // ================= shapes, stickers, drawing =================
+
+    private fun shapePreview(kind: Int, size: Int): Bitmap {
+        val b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = Canvas(b)
+        val l = ShapeLayer(kind, size / 2f, size / 2f)
+        l.w = size * 0.8f
+        l.h = if (ShapeLayer.isLine(kind)) size * 0.3f else if (kind == ShapeLayer.ARROW) size * 0.5f else if (kind == ShapeLayer.HALF_CIRCLE) size * 0.4f else size * 0.8f
+        l.fillColor = 0xFF5F6368.toInt()
+        if (ShapeLayer.isLine(kind)) l.strokeWidth = size * 0.06f
+        l.draw(c, fonts)
+        return b
+    }
+
+    /** All shapes in rows; [current] is marked. */
+    private fun shapeGrid(current: Int, onPick: (Int) -> Unit): View {
+        val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val perRow = (resources.displayMetrics.widthPixels - dp(28)) / dp(62)
+        var row: LinearLayout? = null
+        for (k in 0 until ShapeLayer.COUNT) {
+            if (k % perRow == 0) {
+                row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                grid.addView(row)
+            }
+            val iv = ImageView(this).apply {
+                setImageBitmap(shapePreview(k, dp(48)))
+                background = pill(if (k == current) 0xFFFFF1D0.toInt() else 0xFFFFFFFF.toInt(), if (k == current) accent else line)
+                setPadding(dp(5), dp(5), dp(5), dp(5))
+                setOnClickListener { onPick(k) }
+            }
+            val lp = LinearLayout.LayoutParams(dp(56), dp(56))
+            lp.setMargins(dp(3), dp(3), dp(3), dp(3))
+            row?.addView(iv, lp)
+        }
+        return grid
+    }
+
+    private fun buildShapesPanel(box: LinearLayout) {
+        box.addView(label(R.string.p_pick_shape))
+        box.addView(shapeGrid(-1) { k -> editor.addShape(k) })
+    }
+
+    private fun buildStickersPanel(box: LinearLayout) {
+        val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val perRow = (resources.displayMetrics.widthPixels - dp(28)) / dp(52)
+        var row: LinearLayout? = null
+        STICKERS.forEachIndexed { i, e ->
+            if (i % perRow == 0) {
+                row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                grid.addView(row)
+            }
+            val tv = TextView(this).apply {
+                tag = "own_font"
+                text = e
+                textSize = 28f
+                gravity = Gravity.CENTER
+                background = ripple()
+                setOnClickListener { addSticker(e) }
+            }
+            row?.addView(tv, LinearLayout.LayoutParams(dp(52), dp(52)))
+        }
+        box.addView(grid)
+    }
+
+    private fun addSticker(e: String) {
+        editor.addText(e)
+        ut(false) {
+            it.fontKey = FontManager.DEFAULT_KEY
+            it.textSize = min(editor.doc.width, editor.doc.height) * 0.22f
+            it.color = Color.BLACK
+            it.shadowRadius = 0f
+            it.shadowDy = 0f
+        }
+    }
+
+    private fun startDraw(vector: Boolean) {
+        hideLayers()
+        editor.startDrawing(vector)
+        openPanel(if (vector) "vector" else "draw")
+    }
+
+    override fun onDrawChanged() {
+        btnUndo.alpha = 1f
+    }
+
+    private fun buildDrawPanel(box: LinearLayout, vector: Boolean) {
+        val d = editor.drawing ?: run {
+            box.addView(label(R.string.draw_start_hint))
+            return
+        }
+        fun live(block: (Stroke) -> Unit) {
+            if (d.vector) d.current?.let(block)
+            editor.invalidate()
+        }
+        if (vector) {
+            box.addView(label(R.string.vector_hint))
+            box.addView(chipRow(listOf(getString(R.string.p_open_line), getString(R.string.p_closed_shape)), if (d.closed) 1 else 0) { i ->
+                d.closed = i == 1
+                live { it.closed = d.closed }
+                openPanel("vector")
+            })
+        } else {
+            box.addView(label(R.string.p_brush))
+            val names = listOf(R.string.b_pen, R.string.b_marker, R.string.b_neon, R.string.b_dash, R.string.b_spray, R.string.b_calligraphy).map { getString(it) }
+            box.addView(chipRow(names, d.brush) { i ->
+                d.brush = i
+                openPanel("draw")
+            })
+        }
+        val mx = (max(editor.doc.width, editor.doc.height) * 0.06f).roundToInt().coerceAtLeast(20)
+        box.addView(slider(R.string.p_width, 1, mx, d.width.roundToInt(), { "$it" }) { v ->
+            d.width = v.toFloat()
+            live { it.width = d.width }
+        })
+        box.addView(label(R.string.t_color))
+        box.addView(swatchRow(d.color, false) { c ->
+            d.color = c
+            live { it.color = c }
+        })
+        if (vector) {
+            box.addView(label(R.string.p_fill))
+            box.addView(swatchRow(d.fill, true) { c ->
+                d.fill = c
+                live { it.fill = c }
+                openPanel("vector")
+            })
+        }
+        box.addView(chipRow(listOf(getString(R.string.t_done), getString(R.string.undo), getString(R.string.cancel))) { i ->
+            when (i) {
+                0 -> { editor.finishDrawing(true); closePanel() }
+                1 -> editor.undoDrawStep()
+                2 -> { editor.finishDrawing(false); closePanel() }
+            }
+        })
+    }
+
+    // ================= layers list =================
+
+    private fun toggleLayers() {
+        if (layersBox.visibility == View.VISIBLE) hideLayers() else showLayers()
+    }
+
+    private fun showLayers() {
+        if (editor.drawing != null) return
+        layersBox.visibility = View.VISIBLE
+        rebuildLayers()
+    }
+
+    private fun hideLayers() {
+        layersBox.visibility = View.GONE
+    }
+
+    private val checker: BitmapDrawable by lazy {
+        val c = dp(8)
+        val b = Bitmap.createBitmap(c * 2, c * 2, Bitmap.Config.ARGB_8888)
+        val cv = Canvas(b)
+        cv.drawColor(Color.WHITE)
+        val p = Paint().apply { color = 0xFFD6D6DB.toInt() }
+        cv.drawRect(0f, 0f, c.toFloat(), c.toFloat(), p)
+        cv.drawRect(c.toFloat(), c.toFloat(), 2f * c, 2f * c, p)
+        BitmapDrawable(resources, b).apply { setTileModeXY(Shader.TileMode.REPEAT, Shader.TileMode.REPEAT) }
+    }
+
+    /** A small picture of one layer alone. */
+    private fun layerPreview(l: Layer, w: Int, h: Int): Bitmap {
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val c = Canvas(out)
+        val b = l.pageBounds(fonts)
+        if (b.width() < 1f || b.height() < 1f) return out
+        val k = min(w / b.width(), h / b.height()) * 0.9f
+        c.translate(w / 2f, h / 2f)
+        c.scale(k, k)
+        c.translate(-b.centerX(), -b.centerY())
+        try { l.draw(c, fonts) } catch (e: Exception) { }
+        return out
+    }
+
+    private fun smallIcon(icon: Int, tint: Int, onClick: () -> Unit): View = ImageView(this).apply {
+        setImageResource(icon)
+        imageTintList = ColorStateList.valueOf(tint)
+        setPadding(dp(10), dp(10), dp(10), dp(10))
+        background = GradientDrawable().apply { setColor(0xFFF7F7F9.toInt()); setStroke(1, 0x22000000) }
+        setOnClickListener { onClick() }
+    }
+
+    private fun rebuildLayers() {
+        layersBox.removeAllViews()
+        val head = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(6), dp(6), dp(6))
+        }
+        head.addView(TextView(this).apply {
+            setText(R.string.t_layers)
+            textSize = 17f
+            setTextColor(textMain)
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        head.addView(ImageView(this).apply {
+            setImageResource(R.drawable.ic_close)
+            imageTintList = ColorStateList.valueOf(textDim)
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            background = ripple()
+            setOnClickListener { hideLayers() }
+        }, LinearLayout.LayoutParams(dp(44), dp(44)))
+        layersBox.addView(head)
+
+        val scroll = ScrollView(this)
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(8), 0, dp(8), dp(12))
+        }
+        scroll.addView(list)
+        layersBox.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+
+        if (editor.layers.isEmpty()) {
+            list.addView(TextView(this).apply {
+                setText(R.string.layers_empty)
+                textSize = 14f
+                setTextColor(textDim)
+                setPadding(dp(8), dp(16), dp(8), dp(16))
+            })
+        }
+
+        val itemH = dp(96)
+        val margin = dp(6)
+        val all = editor.layers.toList()
+        // top of the list = front of the page
+        all.asReversed().forEachIndexed { pos, l ->
+            val sel = l === editor.selected
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                background = GradientDrawable().apply {
+                    setColor(Color.WHITE)
+                    setStroke(dp(if (sel) 3 else 1), if (sel) accent else 0x22000000)
+                    cornerRadius = dp(6).toFloat()
+                }
+                setOnClickListener {
+                    if (!l.hidden) editor.selectFromList(l)
+                }
+            }
+            if (l.hidden) item.alpha = 0.55f
+
+            val handle = ImageView(this).apply {
+                setImageResource(R.drawable.ic_drag_indicator)
+                imageTintList = ColorStateList.valueOf(0xFF9AA0A6.toInt())
+                setPadding(dp(6), dp(30), dp(2), dp(30))
+            }
+            item.addView(handle, LinearLayout.LayoutParams(dp(30), ViewGroup.LayoutParams.MATCH_PARENT))
+
+            val prevW = (layersBox.layoutParams.width - dp(16) - dp(30) - dp(88) - dp(10)).coerceAtLeast(dp(60))
+            item.addView(ImageView(this).apply {
+                background = checker
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setImageBitmap(layerPreview(l, prevW, itemH - dp(12)))
+            }, LinearLayout.LayoutParams(0, itemH - dp(12), 1f).apply { setMargins(dp(2), dp(6), dp(6), dp(6)) })
+
+            val buttons = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            val r1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val r2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val bs = itemH / 2
+            r1.addView(smallIcon(if (l.locked) R.drawable.ic_lock else R.drawable.ic_lock_open, if (l.locked) 0xFFE53935.toInt() else 0xFF5F6368.toInt()) {
+                editor.setLocked(l, !l.locked)
+            }, LinearLayout.LayoutParams(dp(44), bs))
+            r1.addView(smallIcon(R.drawable.ic_edit, 0xFF5F6368.toInt()) {
+                if (l.hidden) editor.setHidden(l, false)
+                if (l.locked) editor.setLocked(l, false)
+                editor.selectFromList(l)
+                hideLayers()
+                if (l is TextLayer) promptText(l)
+            }, LinearLayout.LayoutParams(dp(44), bs))
+            r2.addView(smallIcon(if (l.hidden) R.drawable.ic_visibility_off else R.drawable.ic_visibility, if (l.hidden) 0xFFE53935.toInt() else 0xFF5F6368.toInt()) {
+                editor.setHidden(l, !l.hidden)
+            }, LinearLayout.LayoutParams(dp(44), bs))
+            r2.addView(smallIcon(R.drawable.ic_delete, 0xFF5F6368.toInt()) {
+                editor.deleteLayer(l)
+            }, LinearLayout.LayoutParams(dp(44), bs))
+            buttons.addView(r1)
+            buttons.addView(r2)
+            item.addView(buttons, LinearLayout.LayoutParams(dp(88), itemH))
+
+            // drag the dots to move the layer up or down
+            var startY = 0f
+            handle.setOnTouchListener { v, e ->
+                when (e.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        v.parent.requestDisallowInterceptTouchEvent(true)
+                        startY = e.rawY
+                        item.elevation = dp(10).toFloat()
+                        item.alpha = 0.9f
+                    }
+                    MotionEvent.ACTION_MOVE -> item.translationY = e.rawY - startY
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        val shift = (item.translationY / (itemH + margin)).roundToInt()
+                        item.translationY = 0f
+                        item.elevation = 0f
+                        val newPos = (pos + shift).coerceIn(0, all.size - 1)
+                        if (newPos != pos) editor.moveLayerTo(l, all.size - 1 - newPos) else rebuildLayers()
+                    }
+                }
+                true
+            }
+
+            val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, itemH)
+            lp.setMargins(0, margin, 0, 0)
+            list.addView(item, lp)
+        }
+        applyUiFont(layersBox)
     }
 
     // ================= projects =================
@@ -1216,7 +1721,7 @@ class MainActivity : Activity(), EditorView.Listener {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
                 setPadding(dp(6), dp(6), dp(6), dp(6))
-                background = pill(if (on) 0xFF3A3220.toInt() else chipBg, if (on) gold else 0x33FFFFFF)
+                background = pill(if (on) 0xFFFFF1D0.toInt() else chipBg, if (on) gold else line)
                 setOnClickListener { openProject(info) }
                 setOnLongClickListener { projectMenu(info); true }
             }

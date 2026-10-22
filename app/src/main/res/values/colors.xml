@@ -2,8 +2,11 @@
 <resources>
     <color name="bg">#FF121214</color>
     <color name="bar">#FF141416</color>
-    <color name="panel">#FF1C1C21</color>
-    <color name="canvas_bg">#FF0C0C0E</color>
+    <color name="panel">#FFF3F3F6</color>
+    <color name="tools">#FFFFFFFF</color>
+    <color name="divider">#FFDADADF</color>
+    <color name="layers_bg">#F2E9E9EE</color>
+    <color name="canvas_bg">#FF26262B</color>
     <color name="gold">#FFE8B547</color>
     <color name="text">#FFF2F2F5</color>
 </resources>
