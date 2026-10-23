@@ -277,6 +277,8 @@ public final class SmartDesigner {
 
         /** Text that shrinks to fit [maxW]; long single lines are broken into two. */
         JSONObject text(String t, float x, float y, float size, String font, int color, float maxW) throws JSONException {
+            // Aref Ruqaa has no Pashto letters (ې ږ ډ ګ ښ ...): use Amiri for such text
+            if (font.equals(RUQAA) && t.matches(".*[ټډړږښګڼۍېئځڅ].*")) font = AMIRI;
             float s = fit(t, font, size, maxW);
             if (s < size * 0.6f && !t.contains("\n") && t.trim().contains(" ")) {
                 String two = split(t);
