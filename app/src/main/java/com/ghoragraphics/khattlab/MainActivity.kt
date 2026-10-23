@@ -30,7 +30,6 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.EditText
 import android.app.Dialog
-import org.json.JSONObject
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
