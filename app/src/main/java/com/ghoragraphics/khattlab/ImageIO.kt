@@ -71,18 +71,23 @@ object ImageIO {
     }
 
     /** Saves to Pictures/NawakhtGar so it shows in the phone's gallery. */
-    fun saveToGallery(ctx: Context, bmp: Bitmap, name: String): Boolean {
+    fun saveToGallery(ctx: Context, bmp: Bitmap, name: String): Boolean = saveToGallery(ctx, bmp, name, false, 100)
+
+    /** [jpg] = JPG with [quality] (smaller file, no see-through), otherwise PNG. */
+    fun saveToGallery(ctx: Context, bmp: Bitmap, name: String, jpg: Boolean, quality: Int): Boolean {
+        val fmt = if (jpg) Bitmap.CompressFormat.JPEG else Bitmap.CompressFormat.PNG
+        val mime = if (jpg) "image/jpeg" else "image/png"
         return try {
             if (Build.VERSION.SDK_INT >= 29) {
                 val values = ContentValues().apply {
                     put(MediaStore.Images.Media.DISPLAY_NAME, name)
-                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    put(MediaStore.Images.Media.MIME_TYPE, mime)
                     put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/NawakhtGar")
                     put(MediaStore.Images.Media.IS_PENDING, 1)
                 }
                 val cr = ctx.contentResolver
                 val uri = cr.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return false
-                val ok = cr.openOutputStream(uri)?.use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) } ?: false
+                val ok = cr.openOutputStream(uri)?.use { bmp.compress(fmt, quality, it) } ?: false
                 values.clear()
                 values.put(MediaStore.Images.Media.IS_PENDING, 0)
                 cr.update(uri, values, null, null)
@@ -92,8 +97,8 @@ object ImageIO {
                 val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "NawakhtGar")
                 dir.mkdirs()
                 val f = File(dir, name)
-                val ok = FileOutputStream(f).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                MediaScannerConnection.scanFile(ctx, arrayOf(f.absolutePath), arrayOf("image/png"), null)
+                val ok = FileOutputStream(f).use { bmp.compress(fmt, quality, it) }
+                MediaScannerConnection.scanFile(ctx, arrayOf(f.absolutePath), arrayOf(mime), null)
                 ok
             }
         } catch (e: Exception) {
@@ -102,14 +107,16 @@ object ImageIO {
     }
 
     /** Writes a temporary copy for sharing and returns its content:// link. */
-    fun writeShareFile(ctx: Context, bmp: Bitmap): Uri? {
+    fun writeShareFile(ctx: Context, bmp: Bitmap): Uri? = writeShareFile(ctx, bmp, false, 100)
+
+    fun writeShareFile(ctx: Context, bmp: Bitmap, jpg: Boolean, quality: Int): Uri? {
         return try {
             val dir = File(ctx.cacheDir, "share")
             dir.mkdirs()
             dir.listFiles()?.forEach { it.delete() }
-            val name = "NawakhtGar_${System.currentTimeMillis()}.png"
+            val name = "NawakhtGar_${System.currentTimeMillis()}." + if (jpg) "jpg" else "png"
             val f = File(dir, name)
-            FileOutputStream(f).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            FileOutputStream(f).use { bmp.compress(if (jpg) Bitmap.CompressFormat.JPEG else Bitmap.CompressFormat.PNG, quality, it) }
             Uri.parse("content://${ShareProvider.AUTHORITY}/$name")
         } catch (e: Exception) {
             null

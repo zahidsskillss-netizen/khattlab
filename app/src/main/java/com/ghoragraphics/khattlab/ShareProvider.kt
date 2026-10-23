@@ -28,7 +28,7 @@ class ShareProvider : ContentProvider() {
 
     override fun onCreate(): Boolean = true
 
-    override fun getType(uri: Uri): String = "image/png"
+    override fun getType(uri: Uri): String = if (uri.toString().endsWith(".jpg")) "image/jpeg" else "image/png"
 
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor =
         ParcelFileDescriptor.open(fileFor(uri), ParcelFileDescriptor.MODE_READ_ONLY)

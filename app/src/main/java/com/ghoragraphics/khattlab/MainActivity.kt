@@ -2411,49 +2411,124 @@ class MainActivity : Activity(), EditorView.Listener {
         Build.VERSION.SDK_INT < 29 &&
             checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
 
-    private fun saveImage() {
-        if (needsWritePermission()) {
+    // ---------- saving the picture (like PixelLab: format, quality, size) ----------
+
+    private var exportJpg = false
+    private var exportQuality = 95
+    private var exportSize = 0          // 0 = page size, otherwise the longest side in pixels
+    private var exportShare = false
+
+    private fun loadExportPrefs() {
+        val p = getSharedPreferences("app", Context.MODE_PRIVATE)
+        exportJpg = p.getBoolean("exp_jpg", false)
+        exportQuality = p.getInt("exp_q", 95)
+        exportSize = p.getInt("exp_size", 2160)
+    }
+
+    private fun saveExportPrefs() {
+        getSharedPreferences("app", Context.MODE_PRIVATE).edit()
+            .putBoolean("exp_jpg", exportJpg).putInt("exp_q", exportQuality).putInt("exp_size", exportSize).apply()
+    }
+
+    /** The save / share window: picture format, quality and size. */
+    private fun saveImage() = showExport(false)
+
+    private fun showExport(share: Boolean) {
+        exportShare = share
+        loadExportPrefs()
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(4))
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+        }
+        val dialog = AlertDialog.Builder(this).setTitle(R.string.exp_title).setView(ScrollView(this).apply { addView(box) }).create()
+        fun build() {
+            box.removeAllViews()
+            box.addView(label(R.string.exp_format))
+            box.addView(chipRow(listOf(getString(R.string.exp_png), getString(R.string.exp_jpg)), if (exportJpg) 1 else 0) { i ->
+                exportJpg = i == 1; build()
+            })
+            if (exportJpg) {
+                box.addView(label(R.string.exp_quality))
+                val qs = listOf(80, 90, 95, 100)
+                val qn = listOf(R.string.exp_q_medium, R.string.exp_q_high, R.string.exp_q_very_high, R.string.exp_q_ultra).map { getString(it) }
+                box.addView(chipRow(qn, qs.indexOf(exportQuality).coerceAtLeast(0)) { i -> exportQuality = qs[i]; build() })
+            }
+            box.addView(label(R.string.exp_size))
+            val dw = editor.doc.width
+            val dh = editor.doc.height
+            val long = max(dw, dh)
+            val sizes = listOf(0, 1080, 2160, 3240, 4320)
+            fun dims(side: Int): String {
+                val s = if (side == 0) long else side
+                val k = s / long.toFloat()
+                return "${(dw * k).roundToInt()}×${(dh * k).roundToInt()}"
+            }
+            val names = listOf(
+                getString(R.string.exp_s_page) + "  " + dims(0),
+                "HD  " + dims(1080), "2K  " + dims(2160), "3K  " + dims(3240), "4K  " + dims(4320)
+            )
+            box.addView(chipRow(names, sizes.indexOf(exportSize).coerceAtLeast(0)) { i -> exportSize = sizes[i]; build() })
+            box.addView(TextView(this).apply {
+                setText(if (exportJpg) R.string.exp_hint_jpg else R.string.exp_hint_png)
+                textSize = 12.5f; setTextColor(textDim); setPadding(dp(4), dp(10), dp(4), dp(6))
+            })
+            applyUiFont(box)
+        }
+        build()
+        dialog.setButton(AlertDialog.BUTTON_POSITIVE, getString(R.string.exp_save)) { _, _ -> saveExportPrefs(); doExport(false) }
+        dialog.setButton(AlertDialog.BUTTON_NEUTRAL, getString(R.string.share)) { _, _ -> saveExportPrefs(); doExport(true) }
+        dialog.setButton(AlertDialog.BUTTON_NEGATIVE, getString(R.string.cancel)) { _, _ -> }
+        dialog.show()
+    }
+
+    /** Draws the picture at the chosen size; if the phone runs out of memory, tries smaller sizes. */
+    private fun renderForExport(): Bitmap? {
+        val long = max(editor.doc.width, editor.doc.height)
+        var side = if (exportSize == 0) long else exportSize
+        while (side >= 512) {
+            try {
+                return editor.render(side, exportJpg)
+            } catch (e: OutOfMemoryError) {
+                side = (side * 0.75f).roundToInt()
+            }
+        }
+        return null
+    }
+
+    private fun doExport(share: Boolean) {
+        if (!share && needsWritePermission()) {
             requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), REQ_WRITE)
             return
         }
-        val bmp = try {
-            editor.render()
-        } catch (e: OutOfMemoryError) {
+        val bmp = renderForExport()
+        if (bmp == null) {
             toast(R.string.err_save)
             return
         }
-        saveProject(true)
-        val name = "NawakhtGar_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".png"
-        Thread {
-            val ok = ImageIO.saveToGallery(this, bmp, name)
-            runOnUiThread { toast(if (ok) R.string.saved else R.string.err_save) }
-        }.start()
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQ_WRITE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) saveImage()
-            else toast(R.string.err_permission)
-        }
-    }
-
-    private fun shareImage() {
-        val bmp = try {
-            editor.render()
-        } catch (e: OutOfMemoryError) {
-            toast(R.string.err_save)
+        val jpg = exportJpg
+        val q = if (jpg) exportQuality else 100
+        if (!share) {
+            saveProject(true)
+            val name = "NawakhtGar_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + if (jpg) ".jpg" else ".png"
+            Thread {
+                val ok = ImageIO.saveToGallery(this, bmp, name, jpg, q)
+                runOnUiThread {
+                    if (ok) Toast.makeText(this, getString(R.string.saved) + "  " + bmp.width + "×" + bmp.height, Toast.LENGTH_SHORT).show()
+                    else toast(R.string.err_save)
+                }
+            }.start()
             return
         }
         Thread {
-            val uri = ImageIO.writeShareFile(this, bmp)
+            val uri = ImageIO.writeShareFile(this, bmp, jpg, q)
             runOnUiThread {
                 if (uri == null) {
                     toast(R.string.err_save)
                     return@runOnUiThread
                 }
                 val send = Intent(Intent.ACTION_SEND).apply {
-                    type = "image/png"
+                    type = if (jpg) "image/jpeg" else "image/png"
                     putExtra(Intent.EXTRA_STREAM, uri)
                     clipData = ClipData.newRawUri("", uri)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -2466,4 +2541,15 @@ class MainActivity : Activity(), EditorView.Listener {
             }
         }.start()
     }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_WRITE) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) doExport(false)
+            else toast(R.string.err_permission)
+        }
+    }
+
+    private fun shareImage() = showExport(true)
+
 }

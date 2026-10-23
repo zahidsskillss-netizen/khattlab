@@ -295,8 +295,17 @@ class EditorView @JvmOverloads constructor(
     fun setPhoto(b: Bitmap) {
         commit()
         val old = doc
-        doc = DocBackground(b, old.color, b.width, b.height)
+        // the page keeps the photo's shape but never gets small: a small photo would make
+        // every text and shape on it small and blurry when saved
+        val long = max(b.width, b.height)
+        val k = if (long < MIN_PAGE) MIN_PAGE / long.toFloat() else 1f
+        doc = DocBackground(b, old.color, (b.width * k).roundToInt(), (b.height * k).roundToInt())
         relayout(old)
+    }
+
+    companion object {
+        /** Longest side of a page made from a photo, at least. */
+        const val MIN_PAGE = 2048
     }
 
     fun newDoc() {
@@ -518,9 +527,21 @@ class EditorView @JvmOverloads constructor(
     }
 
     /** Draws the finished picture at full size, without the selection box. */
-    fun render(): Bitmap {
-        val b = Bitmap.createBitmap(doc.width, doc.height, Bitmap.Config.ARGB_8888)
-        drawDoc(Canvas(b))
+    fun render(): Bitmap = render(max(doc.width, doc.height))
+
+    /**
+     * Draws the finished picture with its longest side [longSide] pixels. Texts, shapes and lines are
+     * drawn again at that size, so they stay sharp; [opaque] puts white under see-through parts (for JPG).
+     */
+    fun render(longSide: Int, opaque: Boolean = false): Bitmap {
+        val k = longSide / max(doc.width, doc.height).toFloat()
+        val w = (doc.width * k).roundToInt().coerceAtLeast(1)
+        val h = (doc.height * k).roundToInt().coerceAtLeast(1)
+        val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val c = Canvas(b)
+        if (opaque) c.drawColor(Color.WHITE)
+        c.scale(w / doc.width.toFloat(), h / doc.height.toFloat())
+        drawDoc(c)
         return b
     }
 

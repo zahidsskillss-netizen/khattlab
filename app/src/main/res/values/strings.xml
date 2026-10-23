@@ -341,4 +341,20 @@
     <string name="plab_fonts_text_again">دا فونټونه په ټاکلي فولډر کې هم ونه موندل شول. که په بل فولډر کې وي، هغه وټاکئ، یا یې د «فونټ راوړل» په تڼۍ زیات کړئ:</string>
     <string name="plab_pick_folder">فولډر ټاکل</string>
     <string name="plab_later">وروسته</string>
+
+    <!-- saving the picture -->
+    <string name="exp_title">عکس ساتل</string>
+    <string name="exp_format">بڼه</string>
+    <string name="exp_png">PNG (روڼ شالید ساتي)</string>
+    <string name="exp_jpg">JPG (کوچنی فایل)</string>
+    <string name="exp_quality">کیفیت</string>
+    <string name="exp_q_medium">متوسط</string>
+    <string name="exp_q_high">لوړ</string>
+    <string name="exp_q_very_high">ډېر لوړ</string>
+    <string name="exp_q_ultra">الټرا</string>
+    <string name="exp_size">اندازه</string>
+    <string name="exp_s_page">د پاڼې اندازه</string>
+    <string name="exp_hint_png">PNG تر ټولو ښه کیفیت لري. متنونه او شکلونه په ټاکلې اندازه بیا رسمېږي، نو تل تېره ښکاري.</string>
+    <string name="exp_hint_jpg">JPG فایل کوچنی دی؛ د فېسبوک او واټساپ لپاره «ډېر لوړ» او 2K ښه دي.</string>
+    <string name="exp_save">ګالري ته ساتل</string>
 </resources>
