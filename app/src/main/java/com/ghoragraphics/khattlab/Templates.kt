@@ -8,7 +8,7 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * Ready-made designs shipped in assets/templates/*.json (same format as a saved project).
+ * Ready-made designs shipped as JSON files in assets/templates (same format as a saved project).
  * Every text, shape and color in them stays editable after opening.
  */
 class Templates(private val ctx: Context, private val fonts: FontManager) {
