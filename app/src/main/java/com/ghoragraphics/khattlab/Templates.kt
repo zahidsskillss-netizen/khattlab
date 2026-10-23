@@ -46,6 +46,24 @@ class Templates(private val ctx: Context, private val fonts: FontManager) {
 
     fun cachedThumb(item: Item): Bitmap? = synchronized(thumbs) { thumbs[item.file] }
 
+    /** Draws any design JSON small (longest side = [side]). Slow: call it off the main thread. */
+    fun render(j: JSONObject, side: Int): Bitmap? = try {
+        val p = ProjectStore.parse(j) { null }
+        val k = side / max(p.doc.width, p.doc.height).toFloat()
+        val b = Bitmap.createBitmap(
+            (p.doc.width * k).roundToInt().coerceAtLeast(1),
+            (p.doc.height * k).roundToInt().coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888
+        )
+        val c = Canvas(b)
+        c.drawColor(p.doc.color)
+        c.scale(k, k)
+        for (l in p.layers) if (!l.hidden) l.draw(c, fonts)
+        b
+    } catch (e: Throwable) {
+        null
+    }
+
     /** Draws a small preview (longest side = [side]). Slow: call it off the main thread. */
     fun thumb(item: Item, side: Int): Bitmap? {
         cachedThumb(item)?.let { return it }

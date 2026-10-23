@@ -29,6 +29,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.EditText
+import android.app.Dialog
+import org.json.JSONObject
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
@@ -103,6 +105,7 @@ class MainActivity : Activity(), EditorView.Listener {
     private lateinit var projects: ProjectStore
     private val templates by lazy { Templates(this, fonts) }
     private var templateCat = "all"
+    private val designReq = SmartDesigner.Request().also { SmartDesigner.defaults(it, true) }
     private var currentId: String? = null
     private var currentName = ""
     private var dirty = false
@@ -410,6 +413,7 @@ class MainActivity : Activity(), EditorView.Listener {
                 panelTool("pwidth", R.drawable.ic_line_weight, R.string.t_thickness)
             ) + arrange + common + tail
             else -> listOf(
+                toolButton("smart", R.drawable.ic_auto_awesome, R.string.t_smart) { openSmartDesigner() },
                 panelTool("projects", R.drawable.ic_folder, R.string.t_projects),
                 panelTool("templates", R.drawable.ic_dashboard_customize, R.string.t_templates),
                 toolButton("add", R.drawable.ic_text_fields, R.string.t_add_text) { promptText(null) },
@@ -1952,6 +1956,236 @@ class MainActivity : Activity(), EditorView.Listener {
             rows.add(item)
         }
         applyUiFont(layersBox)
+    }
+
+    // ================= smart designer =================
+
+    private val designTypes = listOf(
+        "general" to R.string.dt_general, "jumma" to R.string.dt_jumma, "eid" to R.string.dt_eid,
+        "ramadan" to R.string.dt_ramadan, "sale" to R.string.dt_sale, "opening" to R.string.dt_opening,
+        "card" to R.string.dt_card, "wedding" to R.string.dt_wedding, "condolence" to R.string.dt_condolence,
+        "course" to R.string.dt_course, "clinic" to R.string.dt_clinic, "news" to R.string.dt_news,
+        "birthday" to R.string.dt_birthday, "post" to R.string.dt_post
+    )
+
+    /** A request in, several finished designs out (offline, no AI). */
+    private fun openSmartDesigner() {
+        val r = designReq
+        val dlg = Dialog(this, android.R.style.Theme_DeviceDefault_Light_NoActionBar)
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setBackgroundColor(0xFFF3F3F6.toInt())
+        }
+        val head = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(0xFF141416.toInt())
+            setPadding(dp(16), dp(8), dp(6), dp(8))
+        }
+        head.addView(TextView(this).apply {
+            setText(R.string.smart_title)
+            textSize = 19f
+            setTextColor(gold)
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        head.addView(ImageView(this).apply {
+            setImageResource(R.drawable.ic_close)
+            imageTintList = ColorStateList.valueOf(0xFFF2F2F5.toInt())
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            setOnClickListener { dlg.dismiss() }
+        }, LinearLayout.LayoutParams(dp(46), dp(46)))
+        root.addView(head)
+
+        val scroll = ScrollView(this)
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(8), dp(16), dp(24))
+        }
+        scroll.addView(body)
+        root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+
+        fun field(hint: Int, multi: Boolean = false): EditText = EditText(this).apply {
+            setHint(hint)
+            textSize = 16f
+            setTextColor(textMain)
+            setHintTextColor(0xFF9AA0A6.toInt())
+            textDirection = View.TEXT_DIRECTION_FIRST_STRONG
+            if (multi) {
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                minLines = 2
+                maxLines = 4
+                gravity = Gravity.TOP or Gravity.START
+            } else {
+                isSingleLine = true
+            }
+        }
+
+        // 1. free request
+        body.addView(header(R.string.smart_ask))
+        val ask = field(R.string.smart_ask_hint, true)
+        body.addView(ask)
+
+        // 2. type, texts, colors, size
+        val typeHost = FrameLayout(this)
+        val palHost = FrameLayout(this)
+        val sizeHost = FrameLayout(this)
+        val etTitle = field(R.string.sf_title)
+        val etSub = field(R.string.sf_sub, true)
+        val etName = field(R.string.sf_name)
+        val etPhone = field(R.string.sf_phone).apply { inputType = InputType.TYPE_CLASS_PHONE }
+        val etExtra = field(R.string.sf_extra)
+
+        fun readFields() {
+            r.title = etTitle.text.toString().trim()
+            r.sub = etSub.text.toString().trim()
+            r.name = etName.text.toString().trim()
+            r.phone = etPhone.text.toString().trim()
+            r.extra = etExtra.text.toString().trim()
+        }
+
+        fun fillFields() {
+            etTitle.setText(r.title); etSub.setText(r.sub); etName.setText(r.name)
+            etPhone.setText(r.phone); etExtra.setText(r.extra)
+        }
+
+        lateinit var drawChoices: () -> Unit
+        drawChoices = {
+            typeHost.removeAllViews()
+            typeHost.addView(chipRow(designTypes.map { getString(it.second) }, designTypes.indexOfFirst { it.first == r.type }) { i ->
+                readFields()
+                val old = SmartDesigner.defaultsFor(r.type)
+                val keep = r.title.isNotEmpty() && r.title != old[0]
+                r.type = designTypes[i].first
+                val d = SmartDesigner.defaultsFor(r.type)
+                if (!keep) r.title = d[0]
+                if (r.sub.isEmpty() || r.sub == old[1]) r.sub = d[1]
+                if (r.extra.isEmpty() || r.extra == old[2]) r.extra = d[2]
+                r.palette = SmartDesigner.defaultPalette(r.type)
+                fillFields()
+                drawChoices()
+            })
+            palHost.removeAllViews()
+            val (ps, prow) = horizontalRow()
+            SmartDesigner.PALETTES.forEachIndexed { i, p ->
+                val v = View(this).apply {
+                    background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(p.bg1, p.accent)).apply {
+                        shape = GradientDrawable.OVAL
+                        setStroke(dp(if (i == r.palette) 4 else 1), if (i == r.palette) accent else 0x33000000)
+                    }
+                    setOnClickListener { r.palette = i; drawChoices() }
+                }
+                val lp = LinearLayout.LayoutParams(dp(44), dp(44))
+                lp.setMargins(dp(5), 0, dp(5), 0)
+                prow.addView(v, lp)
+            }
+            palHost.addView(ps)
+            sizeHost.removeAllViews()
+            if (r.type != "card") {
+                val names = listOf(R.string.sz_square, R.string.sz_portrait, R.string.sz_story, R.string.sz_wide).map { getString(it) }
+                sizeHost.addView(chipRow(names, r.size) { i -> r.size = i; drawChoices() })
+            }
+            applyUiFont(typeHost); applyUiFont(sizeHost)
+        }
+
+        body.addView(chipRow(listOf("✓ " + getString(R.string.smart_understand))) {
+            val t = ask.text.toString()
+            if (t.isNotBlank()) {
+                readFields()
+                val ok = SmartDesigner.parse(t, r)
+                fillFields()
+                drawChoices()
+                toast(if (ok) R.string.smart_understood else R.string.smart_general)
+            }
+        })
+
+        body.addView(header(R.string.smart_type)); body.addView(typeHost)
+        body.addView(header(R.string.smart_texts))
+        for (e in listOf(etTitle, etSub, etName, etPhone, etExtra)) body.addView(e)
+        body.addView(header(R.string.smart_colors)); body.addView(palHost)
+        body.addView(header(R.string.smart_size)); body.addView(sizeHost)
+
+        val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val go = TextView(this).apply {
+            setText(R.string.smart_make)
+            textSize = 18f
+            gravity = Gravity.CENTER
+            setTextColor(0xFF141416.toInt())
+            background = pill(gold, gold)
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+        }
+        body.addView(go, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            setMargins(0, dp(18), 0, dp(10))
+        })
+        body.addView(results)
+
+        go.setOnClickListener {
+            readFields()
+            if (r.title.isEmpty()) r.title = SmartDesigner.defaultsFor(r.type)[0]
+            results.removeAllViews()
+            results.addView(label(R.string.smart_working))
+            val req = r
+            Thread {
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+                val designer = SmartDesigner { t, f, sz ->
+                    paint.typeface = fonts.typeface("asset:$f")
+                    paint.textSize = sz
+                    paint.measureText(t)
+                }
+                val docs = try { designer.generate(req) } catch (e: Exception) { emptyList<JSONObject>() }
+                val side = (resources.displayMetrics.widthPixels - dp(48)) / 2
+                val pics = docs.map { templates.render(it, side) }
+                runOnUiThread {
+                    results.removeAllViews()
+                    results.addView(header(R.string.smart_pick))
+                    var row: LinearLayout? = null
+                    docs.forEachIndexed { i, d ->
+                        if (i % 2 == 0) {
+                            row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                            results.addView(row)
+                        }
+                        val iv = ImageView(this).apply {
+                            pics[i]?.let { setImageBitmap(it) }
+                            scaleType = ImageView.ScaleType.FIT_CENTER
+                            adjustViewBounds = true
+                            background = pill(0xFFFFFFFF.toInt(), line)
+                            setPadding(dp(4), dp(4), dp(4), dp(4))
+                            setOnClickListener {
+                                dlg.dismiss()
+                                openDesign(d)
+                            }
+                        }
+                        val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                        lp.setMargins(dp(4), dp(4), dp(4), dp(4))
+                        row?.addView(iv, lp)
+                    }
+                    applyUiFont(results)
+                    scroll.post { scroll.smoothScrollTo(0, results.top) }
+                }
+            }.start()
+        }
+
+        fillFields()
+        drawChoices()
+        applyUiFont(root)
+        dlg.setContentView(root)
+        dlg.show()
+    }
+
+    /** Opens a made design as a new page; the current work is kept as a project first. */
+    private fun openDesign(d: JSONObject) {
+        val go = {
+            try {
+                val p = ProjectStore.parse(d) { null }
+                editor.loadDoc(p.doc, p.layers)
+                currentId = null
+                currentName = p.name
+                dirty = true
+                toast(R.string.template_opened)
+            } catch (e: Exception) {
+                toast(R.string.err_project)
+            }
+        }
+        if (dirty && !editor.isBlank()) saveProject(true) { go() } else go()
     }
 
     // ================= templates =================
