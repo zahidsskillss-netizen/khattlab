@@ -357,4 +357,13 @@
     <string name="exp_hint_png">PNG تر ټولو ښه کیفیت لري. متنونه او شکلونه په ټاکلې اندازه بیا رسمېږي، نو تل تېره ښکاري.</string>
     <string name="exp_hint_jpg">JPG فایل کوچنی دی؛ د فېسبوک او واټساپ لپاره «ډېر لوړ» او 2K ښه دي.</string>
     <string name="exp_save">ګالري ته ساتل</string>
+    <!-- templates -->
+    <string name="t_templates">ټیمپلېټونه</string>
+    <string name="tc_all">ټول</string>
+    <string name="tc_islamic">اسلامي</string>
+    <string name="tc_business">سوداګري</string>
+    <string name="tc_events">مراسم</string>
+    <string name="tc_social">ټولنیزې رسنۍ</string>
+    <string name="template_hint">پر ټیمپلېټ کېکاږئ؛ بیا پر هر متن دوه ځله کېکاږئ او خپل متن ولیکئ</string>
+    <string name="template_opened">ټیمپلېټ خلاص شو. هر څه پکې سمولی شئ</string>
 </resources>

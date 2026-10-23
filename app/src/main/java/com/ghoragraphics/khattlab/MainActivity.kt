@@ -69,7 +69,7 @@ class MainActivity : Activity(), EditorView.Listener {
             0xFF607D8B.toInt(), 0xFF263238.toInt(), 0xFF1B5E20.toInt(), 0xFF0D47A1.toInt()
         )
 
-        private val MAIN_PANELS = setOf("bgcolor", "canvas", "projects", "shapes", "stickers", "draw", "vector")
+        private val MAIN_PANELS = setOf("bgcolor", "canvas", "projects", "templates", "shapes", "stickers", "draw", "vector")
         private val COMMON_PANELS = setOf("position", "relpos", "size", "opacity", "rotate", "persp", "rot3d", "reflect")
         private val TEXT_PANELS = COMMON_PANELS + setOf(
             "styles", "font", "style", "color", "texture", "curve", "background", "align", "spacing",
@@ -101,6 +101,8 @@ class MainActivity : Activity(), EditorView.Listener {
 
     // ---- projects ----
     private lateinit var projects: ProjectStore
+    private val templates by lazy { Templates(this, fonts) }
+    private var templateCat = "all"
     private var currentId: String? = null
     private var currentName = ""
     private var dirty = false
@@ -409,6 +411,7 @@ class MainActivity : Activity(), EditorView.Listener {
             ) + arrange + common + tail
             else -> listOf(
                 panelTool("projects", R.drawable.ic_folder, R.string.t_projects),
+                panelTool("templates", R.drawable.ic_dashboard_customize, R.string.t_templates),
                 toolButton("add", R.drawable.ic_text_fields, R.string.t_add_text) { promptText(null) },
                 toolButton("addimg", R.drawable.ic_add_photo_alternate, R.string.t_add_image) { pick(REQ_ADD_IMAGE) },
                 panelTool("shapes", R.drawable.ic_category, R.string.t_shapes),
@@ -481,6 +484,8 @@ class MainActivity : Activity(), EditorView.Listener {
             }
 
             "projects" -> buildProjectsPanel(box)
+
+            "templates" -> buildTemplatesPanel(box)
 
             "shapes" -> buildShapesPanel(box)
 
@@ -1947,6 +1952,70 @@ class MainActivity : Activity(), EditorView.Listener {
             rows.add(item)
         }
         applyUiFont(layersBox)
+    }
+
+    // ================= templates =================
+
+    private fun buildTemplatesPanel(box: LinearLayout) {
+        val cats = Templates.CATEGORIES
+        val names = cats.map { getString(resources.getIdentifier("tc_$it", "string", packageName)) }
+        box.addView(chipRow(names, cats.indexOf(templateCat)) { i ->
+            templateCat = cats[i]
+            openPanel("templates")
+        })
+        val list = templates.items.filter { templateCat == "all" || it.category == templateCat }
+        val (scroll, row) = horizontalRow()
+        val tile = dp(118)
+        for (item in list) {
+            val cell = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(6), dp(6), dp(6), dp(6))
+                background = pill(0xFFFFFFFF.toInt(), line)
+                setOnClickListener { openTemplate(item) }
+            }
+            val iv = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
+            val cached = templates.cachedThumb(item)
+            if (cached != null) {
+                iv.setImageBitmap(cached)
+            } else {
+                Thread {
+                    val b = templates.thumb(item, dp(220))
+                    runOnUiThread { if (b != null) iv.setImageBitmap(b) }
+                }.start()
+            }
+            cell.addView(iv, LinearLayout.LayoutParams(tile, tile))
+            cell.addView(TextView(this).apply {
+                text = item.name
+                textSize = 12f
+                maxLines = 1
+                gravity = Gravity.CENTER
+                setTextColor(textMain)
+            }, LinearLayout.LayoutParams(tile, ViewGroup.LayoutParams.WRAP_CONTENT))
+            val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(dp(4), 0, dp(4), 0)
+            row.addView(cell, lp)
+        }
+        box.addView(scroll)
+        box.addView(label(R.string.template_hint))
+    }
+
+    /** Opens a template as a new design; the current work is kept as a project first. */
+    private fun openTemplate(item: Templates.Item) {
+        val go = {
+            val p = templates.load(item)
+            if (p == null) {
+                toast(R.string.err_project)
+            } else {
+                editor.loadDoc(p.doc, p.layers)
+                currentId = null
+                currentName = item.name
+                dirty = false
+                closePanel()
+                toast(R.string.template_opened)
+            }
+        }
+        if (dirty && !editor.isBlank()) saveProject(true) { go() } else go()
     }
 
     // ================= projects =================

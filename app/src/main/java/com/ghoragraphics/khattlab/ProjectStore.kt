@@ -157,22 +157,9 @@ class ProjectStore(ctx: Context) {
                 }
             }
 
-            val w = j.optInt("width", 1080)
-            val h = j.optInt("height", 1080)
-            val doc = DocBackground(pic(j.optString("photo", "")), j.optInt("color", Color.WHITE), w, h)
-            val layers = mutableListOf<Layer>()
-            val arr = j.optJSONArray("layers") ?: JSONArray()
-            for (i in 0 until arr.length()) {
-                val o = arr.optJSONObject(i) ?: continue
-                when (o.optString("type")) {
-                    "text" -> layers.add(TextLayer.fromJson(o, pic(o.optString("textureFile", ""))))
-                    "image" -> pic(o.optString("file"))?.let { layers.add(ImageLayer.fromJson(o, it)) }
-                    "shape" -> layers.add(ShapeLayer.fromJson(o, pic(o.optString("imageFile", ""))))
-                    "path" -> layers.add(Stroke.fromJsonLayer(o))
-                }
-            }
+            val loaded = parse(j) { pic(it) }
             synchronized(this) { written[id] = map }
-            Loaded(doc, layers, j.optString("name", ""))
+            loaded
         } catch (e: Exception) {
             null
         } catch (e: OutOfMemoryError) {
@@ -293,6 +280,27 @@ class ProjectStore(ctx: Context) {
         } catch (e: OutOfMemoryError) {
             dir.deleteRecursively()
             null
+        }
+    }
+
+    companion object {
+        /** Turns project JSON into a page and its layers. [pic] gives the picture for a file name (or null). */
+        fun parse(j: JSONObject, pic: (String?) -> Bitmap?): Loaded {
+            val w = j.optInt("width", 1080)
+            val h = j.optInt("height", 1080)
+            val doc = DocBackground(pic(j.optString("photo", "")), j.optInt("color", Color.WHITE), w, h)
+            val layers = mutableListOf<Layer>()
+            val arr = j.optJSONArray("layers") ?: JSONArray()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                when (o.optString("type")) {
+                    "text" -> layers.add(TextLayer.fromJson(o, pic(o.optString("textureFile", ""))))
+                    "image" -> pic(o.optString("file"))?.let { layers.add(ImageLayer.fromJson(o, it)) }
+                    "shape" -> layers.add(ShapeLayer.fromJson(o, pic(o.optString("imageFile", ""))))
+                    "path" -> layers.add(Stroke.fromJsonLayer(o))
+                }
+            }
+            return Loaded(doc, layers, j.optString("name", ""))
         }
     }
 }
