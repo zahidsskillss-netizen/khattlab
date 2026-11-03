@@ -78,7 +78,18 @@ class FontManager(private val ctx: Context) {
         return n.endsWith(".ttf") || n.endsWith(".otf")
     }
 
-    private fun prettyName(file: String) = file.substringBeforeLast('.').replace('_', ' ').replace('-', ' ')
+    private fun prettyName(file: String): String {
+        var n = file.substringBeforeLast('.')
+        n = n.replace("Bahij_", "").replace("Bahij ", "")
+        n = n.replace("Ghora", "Ghora ").replace("Pashto", "")
+        n = n.replace('_', ' ').replace('-', ' ')
+        // drop trailing weight words so the chip stays short
+        n = n.replace(Regex("(?i)\\b(Regular|Normal)\\b"), "").trim()
+        return n.replace(Regex("\\s+"), " ").trim().ifEmpty { file.substringBeforeLast('.') }
+    }
+
+    /** True for the app's own Pashto display fonts (shown first). */
+    fun isGhora(key: String) = key.substringAfter(':').startsWith("Ghora", ignoreCase = true)
 
     private fun loadFile(f: File): Typeface? = try {
         Typeface.createFromFile(f)

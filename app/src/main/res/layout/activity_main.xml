@@ -46,6 +46,12 @@
             android:src="@drawable/ic_redo" />
 
         <ImageView
+            android:id="@+id/btn_zoom"
+            style="@style/TopIcon"
+            android:contentDescription="@string/t_zoom"
+            android:src="@drawable/ic_zoom_in" />
+
+        <ImageView
             android:id="@+id/btn_grid"
             style="@style/TopIcon"
             android:contentDescription="@string/grid"

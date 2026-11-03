@@ -84,6 +84,93 @@ class EditorView @JvmOverloads constructor(
     private var offX = 0f
     private var offY = 0f
 
+    // user zoom / pan of the whole canvas (1 = fit to screen)
+    private var viewScale = 1f
+    private var viewTx = 0f
+    private var viewTy = 0f
+    /** When on, every touch pans/zooms the canvas instead of moving layers. */
+    var viewMode = false
+        set(v) { field = v; invalidate() }
+    private var vStartSpan = 1f
+    private var vStartScale = 1f
+    private var vLastFx = 0f
+    private var vLastFy = 0f
+    private var viewing = false
+
+    val zoomPercent: Int get() = Math.round(viewScale * 100)
+
+    /** Back to fit-to-screen. */
+    fun resetView() {
+        viewScale = 1f; viewTx = 0f; viewTy = 0f
+        invalidate()
+    }
+
+    /** Keeps the canvas from being dragged completely off-screen. */
+    private fun clampView() {
+        viewScale = viewScale.coerceIn(1f, 8f)
+        val baseFit = min(
+            ((width - 40f * density).coerceAtLeast(1f)) / doc.width,
+            ((height - 40f * density).coerceAtLeast(1f)) / doc.height
+        )
+        val f = baseFit * viewScale
+        val dw = doc.width * f
+        val dh = doc.height * f
+        val baseX = (width - dw) / 2f
+        val baseY = (height - dh) / 2f
+        // allow a small margin of overscroll
+        val mx = width * 0.4f
+        val my = height * 0.4f
+        viewTx = viewTx.coerceIn(-(baseX + dw) + mx, width - baseX - mx)
+        viewTy = viewTy.coerceIn(-(baseY + dh) + my, height - baseY - my)
+    }
+
+    /** Pinch-zoom and pan the canvas. Returns true while the gesture owns the touch. */
+    private fun canvasGesture(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_POINTER_DOWN -> if (e.pointerCount >= 2) {
+                viewing = true
+                vStartSpan = spacing(e).coerceAtLeast(1f)
+                vStartScale = viewScale
+                vLastFx = (e.getX(0) + e.getX(1)) / 2f
+                vLastFy = (e.getY(0) + e.getY(1)) / 2f
+            }
+            MotionEvent.ACTION_MOVE -> if (viewing && e.pointerCount >= 2) {
+                val fx = (e.getX(0) + e.getX(1)) / 2f
+                val fy = (e.getY(0) + e.getY(1)) / 2f
+                val ns = (vStartScale * spacing(e) / vStartSpan).coerceIn(1f, 8f)
+                // keep the point under the fingers steady while zooming
+                val k = ns / viewScale
+                viewTx = fx - (fx - viewTx) * k
+                viewTy = fy - (fy - viewTy) * k
+                viewScale = ns
+                viewTx += fx - vLastFx
+                viewTy += fy - vLastFy
+                vLastFx = fx; vLastFy = fy
+                clampView()
+                invalidate()
+                return true
+            }
+            MotionEvent.ACTION_POINTER_UP -> if (e.pointerCount <= 2) viewing = false
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> viewing = false
+        }
+        return viewing
+    }
+
+    /** One-finger pan used by the zoom tool. */
+    private fun viewPan(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { vLastFx = e.x; vLastFy = e.y }
+            MotionEvent.ACTION_MOVE -> {
+                viewTx += e.x - vLastFx
+                viewTy += e.y - vLastFy
+                vLastFx = e.x; vLastFy = e.y
+                clampView()
+                invalidate()
+            }
+        }
+        return true
+    }
+
     private val density = resources.displayMetrics.density
     private val gold = 0xFFE8B547.toInt()
     private val bmpPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
@@ -139,6 +226,7 @@ class EditorView @JvmOverloads constructor(
     private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent): Boolean = true
         override fun onDoubleTap(e: MotionEvent): Boolean {
+            if (viewMode) { resetView(); return true }
             val hit = hitTest(toDocX(e.x), toDocY(e.y))
             if (hit != null) listener?.onEditRequest(hit)
             return true
@@ -508,6 +596,7 @@ class EditorView @JvmOverloads constructor(
         layers.addAll(list)
         doc = d
         selected = null
+        resetView()
         listener?.onSelectionChanged(null)
         listener?.onHistoryChanged()
         invalidate()
@@ -551,9 +640,10 @@ class EditorView @JvmOverloads constructor(
         val m = 20f * density
         val aw = (width - 2 * m).coerceAtLeast(1f)
         val ah = (height - 2 * m).coerceAtLeast(1f)
-        fit = min(aw / doc.width, ah / doc.height)
-        offX = (width - doc.width * fit) / 2f
-        offY = (height - doc.height * fit) / 2f
+        val baseFit = min(aw / doc.width, ah / doc.height)
+        fit = baseFit * viewScale
+        offX = (width - doc.width * fit) / 2f + viewTx
+        offY = (height - doc.height * fit) / 2f + viewTy
     }
 
     private fun drawDoc(canvas: Canvas) {
@@ -846,6 +936,15 @@ class EditorView @JvmOverloads constructor(
         drawing?.let { return drawTouch(it, e) }
         val adj = selected as? ShapeLayer
         if (imageAdjust && adj != null && adj.hasImage()) return imageTouch(adj, e)
+        // dedicated zoom/pan tool: every touch moves the canvas
+        if (viewMode) {
+            gestures.onTouchEvent(e)
+            return if (e.pointerCount >= 2 || viewing) canvasGesture(e) else viewPan(e)
+        }
+        // two fingers on empty canvas pan/zoom the view
+        if ((viewing || e.pointerCount >= 2) && selected == null && mode != 5) {
+            if (canvasGesture(e)) return true
+        }
         gestures.onTouchEvent(e)
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {

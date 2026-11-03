@@ -404,4 +404,13 @@
     <string name="dt_news">خبر</string>
     <string name="dt_birthday">د زیږون ورځ</string>
     <string name="dt_post">د ورځې خبره</string>
+    <!-- font picker -->
+    <string name="font_search">د فونټ لټون…</string>
+    <string name="font_preview">آ ب پ Aa</string>
+    <string name="font_favorites">⭐ خوښ فونټونه</string>
+    <string name="font_recent">🕐 وروستي</string>
+    <string name="font_ghora">غوره فونټونه</string>
+    <string name="font_all">ټول فونټونه</string>
+    <string name="t_zoom">زوم</string>
+    <string name="zoom_on">د زوم حالت روښان شو: په دوو ګوتو لوی/کوچنی او وخوځوئ؛ دوه ځله ټک = بیا سم</string>
 </resources>
