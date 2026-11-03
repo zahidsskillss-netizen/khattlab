@@ -1368,6 +1368,15 @@ class MainActivity : Activity(), EditorView.Listener {
             }
         })
 
+        // eyedropper: pick a color from anywhere on the design
+        add(ImageView(this).apply {
+            setImageResource(R.drawable.ic_eyedropper)
+            imageTintList = ColorStateList.valueOf(textMain)
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            background = circle(chipBg, false)
+            setOnClickListener { startEyedropper(onPick) }
+        })
+
         if (allowNone) {
             add(TextView(this).apply {
                 text = "∅"
@@ -1470,6 +1479,20 @@ class MainActivity : Activity(), EditorView.Listener {
         return scroll
     }
 
+    // ================= eyedropper =================
+
+    /** Hide the panel, let the user tap the canvas, apply the picked color, then reopen the panel. */
+    private fun startEyedropper(onPick: (Int) -> Unit) {
+        val key = activeTool
+        panelHost.visibility = View.GONE
+        toast(R.string.pick_color_hint)
+        editor.colorPick = { c ->
+            editor.commit()
+            onPick(c)
+            if (key != null) openPanel(key) else panelHost.visibility = View.VISIBLE
+        }
+    }
+
     // ================= zoom / pan =================
 
     private fun toggleZoom(btn: ImageView) {
@@ -1500,9 +1523,14 @@ class MainActivity : Activity(), EditorView.Listener {
         prefs.edit().putString("recentFonts", list.joinToString("\n")).apply()
     }
 
-    /** A full-screen font picker with search, recent and favorites. */
+    // tabs: 0 fonts (built-in), 1 my fonts (imported), 2 recent, 3 favorites
+    private var fontTab = 0
+
+    /** Full-screen font picker with tabs; each row previews the layer's own text. */
     private fun openFontPicker() {
-        val t = st ?: return
+        val layer = st ?: return
+        val previewText = layer.text.split("\n").firstOrNull { it.isNotBlank() }?.take(22)
+            ?: getString(R.string.font_preview)
         val dlg = Dialog(this, android.R.style.Theme_DeviceDefault_Light_NoActionBar)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1528,13 +1556,21 @@ class MainActivity : Activity(), EditorView.Listener {
         }, LinearLayout.LayoutParams(dp(46), dp(46)))
         root.addView(head)
 
+        // tab bar
+        val tabBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(0xFFFFFFFF.toInt())
+        }
+        root.addView(tabBar)
+        val tabNames = listOf(R.string.ft_fonts, R.string.ft_mine, R.string.ft_recent, R.string.ft_fav)
+
         val search = EditText(this).apply {
             setHint(R.string.font_search)
-            textSize = 16f
+            textSize = 15f
             isSingleLine = true
             setTextColor(textMain)
             setHintTextColor(0xFF9AA0A6.toInt())
-            setPadding(dp(16), dp(12), dp(16), dp(12))
+            setPadding(dp(16), dp(10), dp(16), dp(10))
         }
         root.addView(search)
 
@@ -1545,8 +1581,6 @@ class MainActivity : Activity(), EditorView.Listener {
         }
         scroll.addView(list)
         root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-
-        val sample = getString(R.string.font_preview)
 
         fun rowFor(f: FontManager.FontItem): View {
             val on = f.key == st?.fontKey
@@ -1559,7 +1593,7 @@ class MainActivity : Activity(), EditorView.Listener {
                     setStroke(dp(if (on) 2 else 1), if (on) accent else 0x22000000)
                     cornerRadius = dp(8).toFloat()
                 }
-                setPadding(dp(14), dp(10), dp(10), dp(10))
+                setPadding(dp(14), dp(12), dp(10), dp(12))
                 setOnClickListener {
                     ut { it.fontKey = f.key }
                     pushRecent(f.key)
@@ -1569,10 +1603,12 @@ class MainActivity : Activity(), EditorView.Listener {
             val txt = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
             txt.addView(TextView(this).apply {
                 tag = "own_font"
-                text = sample
+                text = previewText          // the user's own text, in this font
                 typeface = f.typeface
-                textSize = 24f
+                textSize = 26f
+                maxLines = 1
                 setTextColor(textMain)
+                textDirection = View.TEXT_DIRECTION_FIRST_STRONG
             })
             txt.addView(TextView(this).apply {
                 text = f.label
@@ -1583,65 +1619,90 @@ class MainActivity : Activity(), EditorView.Listener {
             item.addView(ImageView(this).apply {
                 setImageResource(if (fav) R.drawable.ic_star else R.drawable.ic_star_outline)
                 imageTintList = ColorStateList.valueOf(if (fav) 0xFFE8B547.toInt() else 0xFFBDBDC4.toInt())
-                setPadding(dp(10), dp(10), dp(10), dp(10))
-                setOnClickListener { toggleFav(f.key); rebuildFontList(list, search.text.toString(), dlg) }
-            }, LinearLayout.LayoutParams(dp(48), dp(48)))
+                setPadding(dp(10), dp(12), dp(10), dp(12))
+                setOnClickListener { toggleFav(f.key); fillFontList(list, search.text.toString(), ::rowFor) }
+            }, LinearLayout.LayoutParams(dp(48), dp(52)))
             return item
         }
 
-        fontPickerBuild = { q -> rebuildFontList(list, q, dlg) }
-        fontRowBuilder = ::rowFor
-        rebuildFontList(list, "", dlg)
+        fun refresh() {
+            tabBar.removeAllViews()
+            tabNames.forEachIndexed { i, res ->
+                val on = i == fontTab
+                tabBar.addView(TextView(this).apply {
+                    setText(res)
+                    typeface = uiFont
+                    textSize = 14f
+                    gravity = Gravity.CENTER
+                    setPadding(dp(4), dp(12), dp(4), dp(12))
+                    setTextColor(if (on) accent else textDim)
+                    background = GradientDrawable().apply {
+                        setColor(0xFFFFFFFF.toInt())
+                        if (on) setStroke(dp(3), accent) else setStroke(0, 0)
+                    }
+                    setOnClickListener { fontTab = i; fillFontList(list, search.text.toString(), ::rowFor); refresh() }
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            }
+            fillFontList(list, search.text.toString(), ::rowFor)
+        }
+
         search.addTextChangedListener(object : android.text.TextWatcher {
-            override fun afterTextChanged(s: android.text.Editable?) { rebuildFontList(list, s?.toString() ?: "", dlg) }
+            override fun afterTextChanged(s: android.text.Editable?) { fillFontList(list, s?.toString() ?: "", ::rowFor) }
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         })
 
+        refresh()
         applyUiFont(head)
         dlg.setContentView(root)
         dlg.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         dlg.show()
     }
 
-    private var fontPickerBuild: ((String) -> Unit)? = null
-    private var fontRowBuilder: ((FontManager.FontItem) -> View)? = null
-
-    private fun sectionLabel(res: Int): View = TextView(this).apply {
-        setText(res)
-        typeface = uiFont
-        textSize = 13f
-        setTextColor(accent)
-        setPadding(dp(6), dp(12), dp(6), dp(4))
+    /** Fonts shown in the current tab, filtered by the search box. */
+    private fun fontList(): List<FontManager.FontItem> {
+        val all = fonts.fonts
+        return when (fontTab) {
+            1 -> all.filter { it.key.startsWith("file:") }                 // my fonts (imported)
+            2 -> recentFonts().mapNotNull { k -> all.firstOrNull { it.key == k } }
+            3 -> { val fav = favFonts(); all.filter { fav.contains(it.key) } }
+            else -> all.filter { !it.key.startsWith("file:") }             // built-in: Ghora first
+                .sortedByDescending { fonts.isGhora(it.key) }
+        }
     }
 
-    private fun rebuildFontList(list: LinearLayout, query: String, dlg: Dialog) {
+    private fun fillFontList(list: LinearLayout, query: String, build: (FontManager.FontItem) -> View) {
         list.removeAllViews()
-        val build = fontRowBuilder ?: return
         val q = query.trim().lowercase()
-        fun add(items: List<FontManager.FontItem>) {
-            for (f in items) {
-                val v = build(f)
-                val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                lp.setMargins(0, dp(4), 0, 0)
-                list.addView(v, lp)
-            }
+        var items = fontList()
+        if (q.isNotEmpty()) items = items.filter { it.label.lowercase().contains(q) }
+        if (items.isEmpty()) {
+            list.addView(TextView(this).apply {
+                setText(if (fontTab == 1) R.string.ft_mine_empty else R.string.ft_empty)
+                typeface = uiFont
+                textSize = 14f
+                setTextColor(textDim)
+                setPadding(dp(10), dp(24), dp(10), dp(24))
+                gravity = Gravity.CENTER
+            })
+            if (fontTab == 1) list.addView(TextView(this).apply {
+                setText(R.string.font_add)
+                typeface = uiFont
+                textSize = 15f
+                gravity = Gravity.CENTER
+                setTextColor(0xFF141416.toInt())
+                background = pill(gold, gold)
+                setPadding(dp(16), dp(12), dp(16), dp(12))
+                setOnClickListener { importFont() }
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            return
         }
-        val all = fonts.fonts
-        if (q.isEmpty()) {
-            val fav = favFonts()
-            val favItems = all.filter { fav.contains(it.key) }
-            if (favItems.isNotEmpty()) { list.addView(sectionLabel(R.string.font_favorites)); add(favItems) }
-            val recent = recentFonts().mapNotNull { k -> all.firstOrNull { it.key == k } }
-            if (recent.isNotEmpty()) { list.addView(sectionLabel(R.string.font_recent)); add(recent.take(8)) }
-            list.addView(sectionLabel(R.string.font_ghora))
-            add(all.filter { fonts.isGhora(it.key) })
-            list.addView(sectionLabel(R.string.font_all))
-            add(all.filter { !fonts.isGhora(it.key) })
-        } else {
-            add(all.filter { it.label.lowercase().contains(q) })
+        for (f in items) {
+            val v = build(f)
+            val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(0, dp(4), 0, 0)
+            list.addView(v, lp)
         }
-        applyUiFont(list)
     }
 
     // ================= dialogs =================

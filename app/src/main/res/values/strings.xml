@@ -417,4 +417,11 @@
     <string name="p_style">ډول</string>
     <string name="p_bevel_soft">نرم</string>
     <string name="p_bevel_sharp">تیز</string>
+    <string name="ft_fonts">فونټونه</string>
+    <string name="ft_mine">زما فونټونه</string>
+    <string name="ft_recent">وروستي</string>
+    <string name="ft_fav">خوښ ⭐</string>
+    <string name="ft_empty">دلته فونټ نشته</string>
+    <string name="ft_mine_empty">تاسو لا خپل فونټ نه دی اضافه کړی</string>
+    <string name="pick_color_hint">پر پاڼه هر هغه ځای کېکاږئ چې رنګ یې اخلئ</string>
 </resources>

@@ -932,7 +932,29 @@ class EditorView @JvmOverloads constructor(
         return true
     }
 
+    /** When set, the next tap samples the color at that point and calls this, then clears. */
+    var colorPick: ((Int) -> Unit)? = null
+
+    private fun sampleColor(vx: Float, vy: Float): Int {
+        return try {
+            val b = render()
+            val dx = toDocX(vx).roundToInt().coerceIn(0, b.width - 1)
+            val dy = toDocY(vy).roundToInt().coerceIn(0, b.height - 1)
+            val c = b.getPixel(dx, dy)
+            if (Color.alpha(c) == 0) Color.WHITE else (c or (0xFF shl 24))
+        } catch (e: Throwable) {
+            Color.WHITE
+        }
+    }
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        colorPick?.let { cb ->
+            if (e.actionMasked == MotionEvent.ACTION_UP) {
+                colorPick = null
+                cb(sampleColor(e.x, e.y))
+            }
+            return true
+        }
         drawing?.let { return drawTouch(it, e) }
         val adj = selected as? ShapeLayer
         if (imageAdjust && adj != null && adj.hasImage()) return imageTouch(adj, e)
