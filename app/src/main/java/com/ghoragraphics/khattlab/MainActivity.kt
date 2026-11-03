@@ -74,7 +74,7 @@ class MainActivity : Activity(), EditorView.Listener {
         private val COMMON_PANELS = setOf("position", "relpos", "size", "opacity", "rotate", "persp", "rot3d", "reflect")
         private val TEXT_PANELS = COMMON_PANELS + setOf(
             "styles", "font", "style", "color", "texture", "curve", "background", "align", "spacing",
-            "stroke", "shadow", "inner", "emboss", "depth", "floor"
+            "stroke", "shadow", "inner", "emboss", "bevel", "depth", "floor"
         )
         private val IMAGE_PANELS = COMMON_PANELS + setOf("flip", "round", "border", "outline", "imgshadow", "paper")
         private val SHAPE_PANELS = COMMON_PANELS + setOf("sfill", "sstroke", "outline", "sform", "sshadow", "simage")
@@ -383,6 +383,7 @@ class MainActivity : Activity(), EditorView.Listener {
                 panelTool("shadow", R.drawable.ic_filter_none, R.string.t_shadow),
                 panelTool("inner", R.drawable.ic_blur_on, R.string.t_inner_shadow),
                 panelTool("emboss", R.drawable.ic_terrain, R.string.t_emboss),
+                panelTool("bevel", R.drawable.ic_bevel, R.string.t_bevel),
                 panelTool("floor", R.drawable.ic_dehaze, R.string.t_shadow3d)
             ) + tail
             editor.selected is ImageLayer -> listOf(
@@ -876,6 +877,28 @@ class MainActivity : Activity(), EditorView.Listener {
             "emboss" -> if (t != null) {
                 box.addView(slider(R.string.p_strength, 0, 100, t.emboss.roundToInt(), { "$it" }) { v ->
                     ut(false) { it.emboss = v.toFloat() }
+                })
+            }
+
+            "bevel" -> if (t != null) {
+                box.addView(label(R.string.p_enabled))
+                box.addView(onOff(t.bevelOn) { on ->
+                    ut { it.bevelOn = on; if (on && it.bevelDepth <= 0f) it.bevelDepth = 30f }
+                    openPanel("bevel")
+                })
+                box.addView(label(R.string.p_style))
+                box.addView(chipRow(listOf(getString(R.string.p_bevel_soft), getString(R.string.p_bevel_sharp)), if (t.bevelSoft) 0 else 1) { i ->
+                    ut { it.bevelSoft = i == 0; it.bevelOn = true }
+                    openPanel("bevel")
+                })
+                box.addView(slider(R.string.p_depth, 0, 100, t.bevelDepth.roundToInt(), { "$it" }) { v ->
+                    ut(false) { it.bevelDepth = v.toFloat(); if (v > 0) it.bevelOn = true }
+                })
+                box.addView(slider(R.string.p_strength, 0, 100, t.bevelStrength.roundToInt(), { "$it%" }) { v ->
+                    ut(false) { it.bevelStrength = v.toFloat() }
+                })
+                box.addView(slider(R.string.p_light_angle, 0, 359, t.bevelAngle.roundToInt(), { "$it°" }) { v ->
+                    ut(false) { it.bevelAngle = v.toFloat() }
                 })
             }
 

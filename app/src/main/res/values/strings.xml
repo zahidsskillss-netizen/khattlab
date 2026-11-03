@@ -413,4 +413,8 @@
     <string name="font_all">ټول فونټونه</string>
     <string name="t_zoom">زوم</string>
     <string name="zoom_on">د زوم حالت روښان شو: په دوو ګوتو لوی/کوچنی او وخوځوئ؛ دوه ځله ټک = بیا سم</string>
+    <string name="t_bevel">بَرجسته (Bevel)</string>
+    <string name="p_style">ډول</string>
+    <string name="p_bevel_soft">نرم</string>
+    <string name="p_bevel_sharp">تیز</string>
 </resources>

@@ -75,6 +75,13 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
 
     var emboss = 0f                 // 0..100
 
+    // bevel: a chiselled edge with a lit side and a shadowed side
+    var bevelOn = false
+    var bevelDepth = 30f            // 0..100, width of the bevel band
+    var bevelAngle = 135f           // light direction (degrees)
+    var bevelStrength = 70f         // 0..100
+    var bevelSoft = true            // soft (rounded) vs sharp (chiselled) edge
+
     var depth = 0f                  // 3D text
     var depthAngle = 45f
     var depthColor = 0xFF5A5A5A.toInt()
@@ -124,6 +131,7 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
         highlightColor = o.highlightColor; highlightPadding = o.highlightPadding; highlightRound = o.highlightRound
         innerRadius = o.innerRadius; innerDx = o.innerDx; innerDy = o.innerDy; innerColor = o.innerColor
         emboss = o.emboss
+        bevelOn = o.bevelOn; bevelDepth = o.bevelDepth; bevelAngle = o.bevelAngle; bevelStrength = o.bevelStrength; bevelSoft = o.bevelSoft
         depth = o.depth; depthAngle = o.depthAngle; depthColor = o.depthColor
         d3On = o.d3On; d3Persp = o.d3Persp; depthMode = o.depthMode; depthColor2 = o.depthColor2; depthDarken = o.depthDarken
         lightOn = o.lightOn; lightAngle = o.lightAngle; lightStrength = o.lightStrength
@@ -171,6 +179,8 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
         put("hlColor", highlightColor); put("hlPad", highlightPadding.toDouble()); put("hlRound", highlightRound.toDouble())
         put("innerRadius", innerRadius.toDouble()); put("innerDx", innerDx.toDouble()); put("innerDy", innerDy.toDouble()); put("innerColor", innerColor)
         put("emboss", emboss.toDouble())
+        put("bevelOn", bevelOn); put("bevelDepth", bevelDepth.toDouble()); put("bevelAngle", bevelAngle.toDouble())
+        put("bevelStrength", bevelStrength.toDouble()); put("bevelSoft", bevelSoft)
         put("depth", depth.toDouble()); put("depthAngle", depthAngle.toDouble()); put("depthColor", depthColor)
         put("d3On", d3On); put("d3Persp", d3Persp); put("depthMode", depthMode); put("depthColor2", depthColor2)
         put("depthDarken", depthDarken.toDouble()); put("lightOn", lightOn); put("lightAngle", lightAngle.toDouble())
@@ -196,6 +206,8 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
         highlightColor = j.optInt("hlColor", Color.TRANSPARENT); highlightPadding = f("hlPad", highlightPadding); highlightRound = f("hlRound", 50f)
         innerRadius = f("innerRadius", 0f); innerDx = f("innerDx", 0f); innerDy = f("innerDy", 0f); innerColor = j.optInt("innerColor", innerColor)
         emboss = f("emboss", 0f)
+        bevelOn = j.optBoolean("bevelOn", false); bevelDepth = f("bevelDepth", 30f); bevelAngle = f("bevelAngle", 135f)
+        bevelStrength = f("bevelStrength", 70f); bevelSoft = j.optBoolean("bevelSoft", true)
         depth = f("depth", 0f); depthAngle = f("depthAngle", 45f); depthColor = j.optInt("depthColor", depthColor)
         d3On = j.optBoolean("d3On", true); d3Persp = j.optBoolean("d3Persp", false)
         // styles saved before depth modes existed used the chosen depth color
@@ -392,6 +404,21 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
         else -> c
     }
 
+    /** One edge band of the bevel: an overlay clipped to the glyph, minus an offset blurred copy. */
+    private fun bevelBand(c: Canvas, overlay: Int, ox: Float, oy: Float, blur: Float) {
+        layerPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_ATOP)
+        val s = c.saveLayer(null, layerPaint)
+        c.drawColor(overlay)
+        pass(Color.BLACK)
+        paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_OUT)
+        if (blur > 0.5f) paint.maskFilter = BlurMaskFilter(blur, BlurMaskFilter.Blur.NORMAL)
+        c.save()
+        c.translate(ox, oy)
+        drawContent(c)
+        c.restore()
+        c.restoreToCount(s)
+    }
+
     override fun drawLocal(canvas: Canvas, fm: FontManager) {
         prepare(fm)
 
@@ -466,7 +493,8 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
         // fill (+ emboss, + inner shadow, + light)
         val innerOn = innerRadius > 0f || innerDx != 0f || innerDy != 0f
         val lightFront = d3On && lightOn && lightStrength > 0f
-        val layered = innerOn || lightFront
+        val bevelActive = bevelOn && bevelDepth > 0.5f
+        val layered = innerOn || lightFront || bevelActive
         if (wantShadow && strokeWidth <= 0f && layered) {
             // the shadow is drawn under the separate layer, which then covers the text copy
             configureFill()
@@ -496,6 +524,19 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
             lightPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_ATOP)
             val pad = strokeWidth + 8f
             canvas.drawRect(-pad, -pad, cW + pad, cH + pad, lightPaint)
+        }
+
+        if (bevelActive) {
+            val a = Math.toRadians(bevelAngle.toDouble())
+            val off = (textSize * bevelDepth / 100f * 0.18f).coerceAtLeast(1f)
+            val ox = cos(a).toFloat() * off
+            val oy = -sin(a).toFloat() * off
+            val blur = if (bevelSoft) off * 1.1f else off * 0.25f
+            val k = bevelStrength / 100f
+            // highlight band on the lit edge (erase a copy offset away from the light)
+            bevelBand(canvas, Color.argb((210 * k).toInt(), 255, 255, 255), -ox, -oy, blur)
+            // shadow band on the opposite edge
+            bevelBand(canvas, Color.argb((170 * k).toInt(), 0, 0, 0), ox, oy, blur)
         }
 
         if (innerOn) {
