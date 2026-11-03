@@ -38,6 +38,7 @@ import kotlin.math.roundToInt
 object BgHolder {
     var input: Bitmap? = null
     var output: Bitmap? = null
+    var startTool: Int = -1   // -1 = default; else a TOOL_* to open in
 }
 
 /**
@@ -57,6 +58,7 @@ class BgRemoveActivity : Activity() {
     private var brush = 40
     private var tolerance = 40
     private lateinit var bold: Typeface
+    private lateinit var toolPanel: LinearLayout
 
     private val bg = 0xFF141416.toInt()
     private val bar = 0xFF22222A.toInt()
@@ -66,6 +68,7 @@ class BgRemoveActivity : Activity() {
         const val TOOL_ERASE = 0
         const val TOOL_RESTORE = 1
         const val TOOL_MAGIC = 2
+        const val TOOL_CROP = 3
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).roundToInt()
@@ -78,6 +81,7 @@ class BgRemoveActivity : Activity() {
         orig = inp.copy(Bitmap.Config.ARGB_8888, false)
         work = inp.copy(Bitmap.Config.ARGB_8888, true)
         bold = try { Typeface.createFromAsset(assets, "ui/bahij_bold.ttf") } catch (e: Exception) { Typeface.DEFAULT_BOLD }
+        if (BgHolder.startTool >= 0) { tool = BgHolder.startTool; BgHolder.startTool = -1 }
         window.statusBarColor = bar
         window.navigationBarColor = bar
 
@@ -96,7 +100,7 @@ class BgRemoveActivity : Activity() {
         }
         top.addView(iconBtn(R.drawable.ic_close) { setResult(RESULT_CANCELED); finish() })
         top.addView(TextView(this).apply {
-            setText(R.string.t_remove_bg); textSize = 17f; setTextColor(Color.WHITE); typeface = bold
+            setText(R.string.t_photo_edit); textSize = 17f; setTextColor(Color.WHITE); typeface = bold
             setPadding(dp(8), 0, dp(8), 0)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         top.addView(iconBtn(R.drawable.ic_undo) { stepBack() })
@@ -118,6 +122,7 @@ class BgRemoveActivity : Activity() {
             setPadding(dp(12), dp(8), dp(12), dp(12))
         }
         root.addView(panel)
+        toolPanel = panel
         setContentView(root)
         buildPanel(panel)
     }
@@ -126,16 +131,18 @@ class BgRemoveActivity : Activity() {
         panel.removeAllViews()
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val names = listOf(
-            getString(R.string.bg_auto), getString(R.string.bg_magic), getString(R.string.bg_erase), getString(R.string.bg_restore)
+            getString(R.string.bg_crop), getString(R.string.bg_auto), getString(R.string.bg_magic),
+            getString(R.string.bg_erase), getString(R.string.bg_restore)
         )
-        val sel = when (tool) { TOOL_MAGIC -> 1; TOOL_ERASE -> 2; else -> 3 }
+        val sel = when (tool) { TOOL_CROP -> 0; TOOL_MAGIC -> 2; TOOL_ERASE -> 3; TOOL_RESTORE -> 4; else -> -1 }
         names.forEachIndexed { i, n ->
             row.addView(chip(n, i == sel) {
                 when (i) {
-                    0 -> runAuto()
-                    1 -> tool = TOOL_MAGIC
-                    2 -> tool = TOOL_ERASE
-                    3 -> tool = TOOL_RESTORE
+                    0 -> { tool = TOOL_CROP; view.startCrop() }
+                    1 -> runAuto()
+                    2 -> tool = TOOL_MAGIC
+                    3 -> tool = TOOL_ERASE
+                    4 -> tool = TOOL_RESTORE
                 }
                 buildPanel(panel)
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(6) })
@@ -143,17 +150,56 @@ class BgRemoveActivity : Activity() {
         panel.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(row) })
         panel.addView(TextView(this).apply {
             setText(when (tool) {
+                TOOL_CROP -> R.string.bg_hint_crop
                 TOOL_MAGIC -> R.string.bg_hint_magic
                 TOOL_RESTORE -> R.string.bg_hint_restore
                 else -> R.string.bg_hint_erase
             })
             textSize = 12.5f; setTextColor(0xB3FFFFFF.toInt()); setPadding(0, dp(8), 0, dp(4))
         })
-        if (tool == TOOL_MAGIC) {
+        if (tool == TOOL_CROP) {
+            val arow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val aspects = listOf("آزاد" to 0f, "1:1" to 1f, "4:5" to 0.8f, "16:9" to 16f/9f, "9:16" to 9f/16f, "3:4" to 0.75f)
+            aspects.forEach { (name, a) ->
+                arow.addView(chip(name, view.cropAspect == a) {
+                    view.setCropAspect(a); buildPanel(panel)
+                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(6) })
+            }
+            panel.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(arow) })
+            panel.addView(chip(getString(R.string.bg_do_crop), true) { applyCrop() }.apply {
+                val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                lp.topMargin = dp(8); layoutParams = lp; gravity = Gravity.CENTER
+            })
+        } else if (tool == TOOL_MAGIC) {
             panel.addView(seek(R.string.bg_tolerance, 1, 120, tolerance) { tolerance = it })
         } else {
             panel.addView(seek(R.string.bg_brush, 5, 150, brush) { brush = it })
         }
+    }
+
+    private fun applyCrop() {
+        val r = view.cropRectBitmap() ?: return
+        val l = r[0].coerceIn(0, work.width - 1)
+        val t = r[1].coerceIn(0, work.height - 1)
+        val ww = (r[2] - l).coerceIn(1, work.width - l)
+        val hh = (r[3] - t).coerceIn(1, work.height - t)
+        if (ww < 2 || hh < 2) return
+        try {
+            remember()
+            val cropped = Bitmap.createBitmap(work, l, t, ww, hh)
+            work = cropped.copy(Bitmap.Config.ARGB_8888, true)
+            // restore now refers to the cropped picture
+            if (!orig.isRecycled) orig.recycle()
+            orig = work.copy(Bitmap.Config.ARGB_8888, false)
+            tool = TOOL_ERASE
+            view.endCrop()
+            view.resetViewTransform()
+            toast(R.string.bg_cropped)
+        } catch (e: Throwable) {
+            toast(R.string.err_save)
+        }
+        buildPanel(toolPanel)
+        view.invalidate()
     }
 
     private fun iconBtn(icon: Int, tint: Int = Color.WHITE, onClick: () -> Unit) = ImageView(this).apply {
@@ -480,6 +526,60 @@ class BgRemoveActivity : Activity() {
         private var downY = 0f
         private var movedFar = false
 
+        // ---- crop ----
+        var cropAspect = 0f    // 0 = free
+            private set
+        private var cL = 0f; private var cT = 0f; private var cR = 0f; private var cB = 0f
+        private var cropHandle = -1   // 0 TL 1 TR 2 BR 3 BL 4 move
+        private val cropPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = Color.WHITE; strokeWidth = 2f * resources.displayMetrics.density }
+        private val cropDim = Paint().apply { color = 0xAA000000.toInt() }
+        private val cropHandlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFE8B547.toInt() }
+        private val cropGrid = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = 0x66FFFFFF; strokeWidth = 1f * resources.displayMetrics.density }
+
+        fun startCrop() {
+            val m = min(work.width, work.height) * 0.08f
+            cL = m; cT = m; cR = work.width - m; cB = work.height - m
+            if (cropAspect > 0f) applyAspect()
+            invalidate()
+        }
+        fun endCrop() { cropHandle = -1 }
+        fun setCropAspect(a: Float) { cropAspect = a; if (a > 0f) applyAspect(); invalidate() }
+
+        private fun applyAspect() {
+            val cx = (cL + cR) / 2f; val cy = (cT + cB) / 2f
+            var w = cR - cL; var h = cB - cT
+            if (w / h > cropAspect) w = h * cropAspect else h = w / cropAspect
+            // fit inside the image
+            val maxW = work.width.toFloat(); val maxH = work.height.toFloat()
+            if (w > maxW) { w = maxW; h = w / cropAspect }
+            if (h > maxH) { h = maxH; w = h * cropAspect }
+            cL = (cx - w / 2f).coerceIn(0f, maxW - w); cT = (cy - h / 2f).coerceIn(0f, maxH - h)
+            cR = cL + w; cB = cT + h
+        }
+
+        fun cropRectBitmap(): IntArray? {
+            if (tool != TOOL_CROP) return null
+            return intArrayOf(cL.roundToInt(), cT.roundToInt(), cR.roundToInt(), cB.roundToInt())
+        }
+
+        fun resetViewTransform() { zoom = 1f; panX = 0f; panY = 0f; invalidate() }
+
+        private fun bmpToScreen(bx: Float, by: Float): FloatArray {
+            val p = floatArrayOf(bx, by); m.mapPoints(p); return p
+        }
+
+        private fun cropHit(x: Float, y: Float): Int {
+            val tl = bmpToScreen(cL, cT); val br = bmpToScreen(cR, cB)
+            val tr = bmpToScreen(cR, cT); val bl = bmpToScreen(cL, cB)
+            val r = 28f * resources.displayMetrics.density
+            if (hypot(x - tl[0], y - tl[1]) < r) return 0
+            if (hypot(x - tr[0], y - tr[1]) < r) return 1
+            if (hypot(x - br[0], y - br[1]) < r) return 2
+            if (hypot(x - bl[0], y - bl[1]) < r) return 3
+            if (x > tl[0] && x < br[0] && y > tl[1] && y < br[1]) return 4
+            return -1
+        }
+
         private fun baseFit(): Float {
             val pad = 16f * resources.displayMetrics.density
             return min((width - 2 * pad) / work.width, (height - 2 * pad) / work.height).coerceAtLeast(0.01f)
@@ -500,11 +600,32 @@ class BgRemoveActivity : Activity() {
             val t = (height - work.height * f) / 2f + panY
             canvas.drawRect(l, t, l + work.width * f, t + work.height * f, checker)
             canvas.drawBitmap(work, m, bmpPaint)
-            if (fingerX >= 0f && tool != TOOL_MAGIC) {
+            if (fingerX >= 0f && tool != TOOL_MAGIC && tool != TOOL_CROP) {
                 ring.strokeWidth = 1.5f * resources.displayMetrics.density
                 ring.color = if (tool == TOOL_ERASE) 0xFFFF5252.toInt() else 0xFF69F0AE.toInt()
                 canvas.drawCircle(fingerX, fingerY, brush * resources.displayMetrics.density / 2f, ring)
             }
+            if (tool == TOOL_CROP) drawCrop(canvas)
+        }
+
+        private fun drawCrop(canvas: Canvas) {
+            if (cR - cL < 1f || cB - cT < 1f) startCrop()
+            val tl = bmpToScreen(cL, cT); val br = bmpToScreen(cR, cB)
+            val l = tl[0]; val t = tl[1]; val rr = br[0]; val b = br[1]
+            // dim outside the crop rect
+            canvas.drawRect(0f, 0f, width.toFloat(), t, cropDim)
+            canvas.drawRect(0f, b, width.toFloat(), height.toFloat(), cropDim)
+            canvas.drawRect(0f, t, l, b, cropDim)
+            canvas.drawRect(rr, t, width.toFloat(), b, cropDim)
+            // thirds
+            for (i in 1..2) {
+                val gx = l + (rr - l) * i / 3f; val gy = t + (b - t) * i / 3f
+                canvas.drawLine(gx, t, gx, b, cropGrid); canvas.drawLine(l, gy, rr, gy, cropGrid)
+            }
+            canvas.drawRect(l, t, rr, b, cropPaint)
+            val hr = 9f * resources.displayMetrics.density
+            for (p in listOf(floatArrayOf(l, t), floatArrayOf(rr, t), floatArrayOf(rr, b), floatArrayOf(l, b)))
+                canvas.drawCircle(p[0], p[1], hr, cropHandlePaint)
         }
 
         private fun toBmp(x: Float, y: Float): FloatArray {
@@ -539,6 +660,7 @@ class BgRemoveActivity : Activity() {
                     movedFar = false
                     lastX = e.x; lastY = e.y; downX = e.x; downY = e.y
                     fingerX = e.x; fingerY = e.y
+                    if (tool == TOOL_CROP) cropHandle = cropHit(e.x, e.y)
                 }
                 MotionEvent.ACTION_POINTER_DOWN -> if (e.pointerCount == 2) {
                     // second finger: move / zoom, and undo any paint the first finger just started
@@ -561,6 +683,33 @@ class BgRemoveActivity : Activity() {
                         panY += my - midY
                         midX = mx; midY = my
                         invalidate()
+                    } else if (!twoFinger && tool == TOOL_CROP) {
+                        if (cropHandle >= 0) {
+                            val f = baseFit() * zoom
+                            val ddx = (e.x - lastX) / f; val ddy = (e.y - lastY) / f
+                            when (cropHandle) {
+                                0 -> { cL += ddx; cT += ddy }
+                                1 -> { cR += ddx; cT += ddy }
+                                2 -> { cR += ddx; cB += ddy }
+                                3 -> { cL += ddx; cB += ddy }
+                                4 -> { cL += ddx; cR += ddx; cT += ddy; cB += ddy }
+                            }
+                            // keep order and bounds
+                            cL = cL.coerceIn(0f, work.width - 10f); cT = cT.coerceIn(0f, work.height - 10f)
+                            cR = cR.coerceIn(cL + 10f, work.width.toFloat()); cB = cB.coerceIn(cT + 10f, work.height.toFloat())
+                            if (cropAspect > 0f && cropHandle != 4) {
+                                // keep ratio from the opposite corner
+                                when (cropHandle) {
+                                    0 -> cT = cB - (cR - cL) / cropAspect
+                                    1 -> cT = cB - (cR - cL) / cropAspect
+                                    2 -> cB = cT + (cR - cL) / cropAspect
+                                    3 -> cB = cT + (cR - cL) / cropAspect
+                                }
+                                cT = cT.coerceIn(0f, cB - 10f); cB = cB.coerceIn(cT + 10f, work.height.toFloat())
+                            }
+                            lastX = e.x; lastY = e.y
+                            invalidate()
+                        }
                     } else if (!twoFinger && tool != TOOL_MAGIC) {
                         if (!painting) {
                             if (abs(e.x - downX) + abs(e.y - downY) < 6f * resources.displayMetrics.density) return true

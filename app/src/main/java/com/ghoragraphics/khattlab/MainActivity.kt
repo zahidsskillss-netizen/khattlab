@@ -390,6 +390,8 @@ class MainActivity : Activity(), EditorView.Listener {
             editor.selected is ImageLayer -> listOf(
                 toolButton("replace", R.drawable.ic_swap_horiz, R.string.t_replace) { pick(REQ_REPLACE) },
                 toolButton("bgremove", R.drawable.ic_auto_fix, R.string.t_remove_bg) { openBgRemover() },
+                toolButton("crop", R.drawable.ic_crop, R.string.t_crop) { openBgRemover(BgRemoveActivity.TOOL_CROP) },
+                toolButton("eraser", R.drawable.ic_eraser, R.string.t_eraser) { openBgRemover(BgRemoveActivity.TOOL_ERASE) },
                 panelTool("filter", R.drawable.ic_tune, R.string.t_filter),
                 panelTool("paper", R.drawable.ic_page_curl, R.string.t_paper)
             ) + arrange + common + listOf(
@@ -1988,11 +1990,12 @@ class MainActivity : Activity(), EditorView.Listener {
     }
 
     /** Opens the background remover for the selected picture. */
-    private fun openBgRemover() {
+    private fun openBgRemover(startTool: Int = -1) {
         val b = si?.bitmap ?: return
         if (b.isRecycled) return
         BgHolder.input = b
         BgHolder.output = null
+        BgHolder.startTool = startTool
         @Suppress("DEPRECATION")
         startActivityForResult(Intent(this, BgRemoveActivity::class.java), REQ_BG_REMOVE)
     }

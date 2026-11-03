@@ -433,4 +433,11 @@
     <string name="fl_warm">تود</string>
     <string name="fl_cool">سوړ</string>
     <string name="t_glow">ځلا (Glow)</string>
+    <string name="t_photo_edit">د عکس سمون</string>
+    <string name="t_crop">قطع (Crop)</string>
+    <string name="t_eraser">پاکوونکی</string>
+    <string name="bg_crop">قطع</string>
+    <string name="bg_hint_crop">څنډې یا کونجونه وخوځوئ؛ بیا «قطع کړه» کېکاږئ</string>
+    <string name="bg_do_crop">✓ قطع کړه</string>
+    <string name="bg_cropped">عکس قطع شو</string>
 </resources>
