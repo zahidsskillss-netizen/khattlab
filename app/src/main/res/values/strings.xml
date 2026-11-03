@@ -424,4 +424,13 @@
     <string name="ft_empty">دلته فونټ نشته</string>
     <string name="ft_mine_empty">تاسو لا خپل فونټ نه دی اضافه کړی</string>
     <string name="pick_color_hint">پر پاڼه هر هغه ځای کېکاږئ چې رنګ یې اخلئ</string>
+    <string name="t_filter">فلټر</string>
+    <string name="p_brightness">روښانتیا</string>
+    <string name="p_contrast">کنټراست</string>
+    <string name="p_saturation">رنګینه</string>
+    <string name="p_warmth">تودوخه</string>
+    <string name="fl_vivid">ژوندی</string>
+    <string name="fl_warm">تود</string>
+    <string name="fl_cool">سوړ</string>
+    <string name="t_glow">ځلا (Glow)</string>
 </resources>

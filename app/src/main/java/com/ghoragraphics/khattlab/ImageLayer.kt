@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Shader
@@ -56,6 +58,40 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
     var shadowDy = 0f
     var shadowColor = 0x99000000.toInt()
 
+    // photo adjustments, each -100..100 (0 = unchanged)
+    var brightness = 0f
+    var contrast = 0f
+    var saturation = 0f
+    var warmth = 0f
+
+    fun hasFilter() = brightness != 0f || contrast != 0f || saturation != 0f || warmth != 0f
+
+    /** Combined color filter for the four photo adjustments. */
+    private fun buildFilter(): ColorMatrixColorFilter {
+        val m = ColorMatrix()
+        // saturation
+        m.postConcat(ColorMatrix().apply { setSaturation((1f + saturation / 100f).coerceIn(0f, 2f)) })
+        // contrast around mid-grey
+        val c = (1f + contrast / 100f).coerceIn(0f, 2f)
+        val tc = (0.5f - 0.5f * c) * 255f
+        m.postConcat(ColorMatrix(floatArrayOf(
+            c, 0f, 0f, 0f, tc,
+            0f, c, 0f, 0f, tc,
+            0f, 0f, c, 0f, tc,
+            0f, 0f, 0f, 1f, 0f
+        )))
+        // brightness (add) and warmth (R up, B down)
+        val b = brightness / 100f * 90f
+        val w = warmth / 100f * 40f
+        m.postConcat(ColorMatrix(floatArrayOf(
+            1f, 0f, 0f, 0f, b + w,
+            0f, 1f, 0f, 0f, b,
+            0f, 0f, 1f, 0f, b - w,
+            0f, 0f, 0f, 1f, 0f
+        )))
+        return ColorMatrixColorFilter(m)
+    }
+
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val shapePaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -82,6 +118,7 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
         c.edge = edge; c.tornSides = tornSides; c.tornDepth = tornDepth; c.tornRim = tornRim; c.tornSeed = tornSeed
         c.paperColor = paperColor; c.curlCorner = curlCorner; c.curlSize = curlSize
         c.shadowRadius = shadowRadius; c.shadowDx = shadowDx; c.shadowDy = shadowDy; c.shadowColor = shadowColor
+        c.brightness = brightness; c.contrast = contrast; c.saturation = saturation; c.warmth = warmth
         return c
     }
 
@@ -97,6 +134,8 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
         put("shadowColor", shadowColor)
         put("edge", edge); put("tornSides", tornSides); put("tornDepth", tornDepth.toDouble()); put("tornRim", tornRim.toDouble())
         put("tornSeed", tornSeed); put("paperColor", paperColor); put("curlCorner", curlCorner); put("curlSize", curlSize.toDouble())
+        put("brightness", brightness.toDouble()); put("contrast", contrast.toDouble())
+        put("saturation", saturation.toDouble()); put("warmth", warmth.toDouble())
         putBase(this)
     }
 
@@ -123,6 +162,7 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
             l.edge = j.optInt("edge", EDGE_NONE); l.tornSides = j.optInt("tornSides", SIDE_BOTTOM)
             l.tornDepth = f("tornDepth", 40f); l.tornRim = f("tornRim", 14f); l.tornSeed = j.optInt("tornSeed", 7)
             l.paperColor = j.optInt("paperColor", Color.WHITE); l.curlCorner = j.optInt("curlCorner", 2); l.curlSize = f("curlSize", 28f)
+            l.brightness = f("brightness", 0f); l.contrast = f("contrast", 0f); l.saturation = f("saturation", 0f); l.warmth = f("warmth", 0f)
             l.readBase(j)
             return l
         }
@@ -328,6 +368,7 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
         }
 
         paint.color = Color.BLACK
+        paint.colorFilter = if (hasFilter()) buildFilter() else null
         if (anyRound) {
             paint.shader = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
             canvas.drawPath(roundPath, paint)
@@ -335,6 +376,7 @@ class ImageLayer(var bitmap: Bitmap, px: Float, py: Float) : Layer() {
         } else {
             canvas.drawBitmap(bitmap, null, rect, paint)
         }
+        paint.colorFilter = null
 
         if (borderWidth > 0f) {
             borderPaint.style = Paint.Style.STROKE

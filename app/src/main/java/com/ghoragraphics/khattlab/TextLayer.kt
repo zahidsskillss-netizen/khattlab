@@ -75,6 +75,12 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
 
     var emboss = 0f                 // 0..100
 
+    // glow: a soft neon halo around the letters
+    var glowOn = false
+    var glowColor = 0xFF00E5FF.toInt()
+    var glowRadius = 40f            // 0..100
+    var glowStrength = 60f          // 0..100
+
     // bevel: a chiselled edge with a lit side and a shadowed side
     var bevelOn = false
     var bevelDepth = 30f            // 0..100, width of the bevel band
@@ -132,6 +138,7 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
         innerRadius = o.innerRadius; innerDx = o.innerDx; innerDy = o.innerDy; innerColor = o.innerColor
         emboss = o.emboss
         bevelOn = o.bevelOn; bevelDepth = o.bevelDepth; bevelAngle = o.bevelAngle; bevelStrength = o.bevelStrength; bevelSoft = o.bevelSoft
+        glowOn = o.glowOn; glowColor = o.glowColor; glowRadius = o.glowRadius; glowStrength = o.glowStrength
         depth = o.depth; depthAngle = o.depthAngle; depthColor = o.depthColor
         d3On = o.d3On; d3Persp = o.d3Persp; depthMode = o.depthMode; depthColor2 = o.depthColor2; depthDarken = o.depthDarken
         lightOn = o.lightOn; lightAngle = o.lightAngle; lightStrength = o.lightStrength
@@ -181,6 +188,7 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
         put("emboss", emboss.toDouble())
         put("bevelOn", bevelOn); put("bevelDepth", bevelDepth.toDouble()); put("bevelAngle", bevelAngle.toDouble())
         put("bevelStrength", bevelStrength.toDouble()); put("bevelSoft", bevelSoft)
+        put("glowOn", glowOn); put("glowColor", glowColor); put("glowRadius", glowRadius.toDouble()); put("glowStrength", glowStrength.toDouble())
         put("depth", depth.toDouble()); put("depthAngle", depthAngle.toDouble()); put("depthColor", depthColor)
         put("d3On", d3On); put("d3Persp", d3Persp); put("depthMode", depthMode); put("depthColor2", depthColor2)
         put("depthDarken", depthDarken.toDouble()); put("lightOn", lightOn); put("lightAngle", lightAngle.toDouble())
@@ -208,6 +216,7 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
         emboss = f("emboss", 0f)
         bevelOn = j.optBoolean("bevelOn", false); bevelDepth = f("bevelDepth", 30f); bevelAngle = f("bevelAngle", 135f)
         bevelStrength = f("bevelStrength", 70f); bevelSoft = j.optBoolean("bevelSoft", true)
+        glowOn = j.optBoolean("glowOn", false); glowColor = j.optInt("glowColor", glowColor); glowRadius = f("glowRadius", 40f); glowStrength = f("glowStrength", 60f)
         depth = f("depth", 0f); depthAngle = f("depthAngle", 45f); depthColor = j.optInt("depthColor", depthColor)
         d3On = j.optBoolean("d3On", true); d3Persp = j.optBoolean("d3Persp", false)
         // styles saved before depth modes existed used the chosen depth color
@@ -475,6 +484,16 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
             val rr = hp * highlightRound / 100f * 1.4f
             bgPaint.color = highlightColor
             canvas.drawRoundRect(RectF(-hp, -hp * 0.5f, cW + hp, cH + hp * 0.5f), rr, rr, bgPaint)
+        }
+
+        // neon glow (behind the letters)
+        if (glowOn && glowRadius > 0.5f) {
+            val r = (textSize * glowRadius / 100f * 0.5f).coerceAtLeast(1f)
+            pass(glowColor)
+            paint.maskFilter = BlurMaskFilter(r, BlurMaskFilter.Blur.NORMAL)
+            val reps = 1 + (glowStrength / 25f).toInt()
+            repeat(reps) { drawContent(canvas) }
+            pass(color)
         }
 
         val wantShadow = shadowRadius > 0f || shadowDx != 0f || shadowDy != 0f

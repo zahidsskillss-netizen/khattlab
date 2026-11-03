@@ -74,9 +74,9 @@ class MainActivity : Activity(), EditorView.Listener {
         private val COMMON_PANELS = setOf("position", "relpos", "size", "opacity", "rotate", "persp", "rot3d", "reflect")
         private val TEXT_PANELS = COMMON_PANELS + setOf(
             "styles", "font", "style", "color", "texture", "curve", "background", "align", "spacing",
-            "stroke", "shadow", "inner", "emboss", "bevel", "depth", "floor"
+            "stroke", "shadow", "inner", "emboss", "bevel", "glow", "depth", "floor"
         )
-        private val IMAGE_PANELS = COMMON_PANELS + setOf("flip", "round", "border", "outline", "imgshadow", "paper")
+        private val IMAGE_PANELS = COMMON_PANELS + setOf("flip", "round", "border", "outline", "imgshadow", "paper", "filter")
         private val SHAPE_PANELS = COMMON_PANELS + setOf("sfill", "sstroke", "outline", "sform", "sshadow", "simage")
         private val PATH_PANELS = COMMON_PANELS + setOf("pcolor", "pwidth")
 
@@ -384,11 +384,13 @@ class MainActivity : Activity(), EditorView.Listener {
                 panelTool("inner", R.drawable.ic_blur_on, R.string.t_inner_shadow),
                 panelTool("emboss", R.drawable.ic_terrain, R.string.t_emboss),
                 panelTool("bevel", R.drawable.ic_bevel, R.string.t_bevel),
+                panelTool("glow", R.drawable.ic_glow, R.string.t_glow),
                 panelTool("floor", R.drawable.ic_dehaze, R.string.t_shadow3d)
             ) + tail
             editor.selected is ImageLayer -> listOf(
                 toolButton("replace", R.drawable.ic_swap_horiz, R.string.t_replace) { pick(REQ_REPLACE) },
                 toolButton("bgremove", R.drawable.ic_auto_fix, R.string.t_remove_bg) { openBgRemover() },
+                panelTool("filter", R.drawable.ic_tune, R.string.t_filter),
                 panelTool("paper", R.drawable.ic_page_curl, R.string.t_paper)
             ) + arrange + common + listOf(
                 panelTool("flip", R.drawable.ic_flip, R.string.t_flip),
@@ -880,6 +882,18 @@ class MainActivity : Activity(), EditorView.Listener {
                 })
             }
 
+            "glow" -> if (t != null) {
+                box.addView(label(R.string.p_enabled))
+                box.addView(onOff(t.glowOn) { on -> ut { it.glowOn = on }; openPanel("glow") })
+                box.addView(slider(R.string.p_size, 0, 100, t.glowRadius.roundToInt(), { "$it" }) { v ->
+                    ut(false) { it.glowRadius = v.toFloat(); if (v > 0) it.glowOn = true }
+                })
+                box.addView(slider(R.string.p_strength, 0, 100, t.glowStrength.roundToInt(), { "$it%" }) { v ->
+                    ut(false) { it.glowStrength = v.toFloat() }
+                })
+                box.addView(swatchRow(t.glowColor, false) { c -> ut { it.glowColor = c; it.glowOn = true } })
+            }
+
             "bevel" -> if (t != null) {
                 box.addView(label(R.string.p_enabled))
                 box.addView(onOff(t.bevelOn) { on ->
@@ -1006,6 +1020,33 @@ class MainActivity : Activity(), EditorView.Listener {
                 addCornerSliders(box, im.round, im.radii) { i, v ->
                     ui(false) { if (i < 0) it.setAllCorners(v) else it.radii[i] = v }
                 }
+            }
+
+            "filter" -> if (im != null) {
+                box.addView(slider(R.string.p_brightness, -100, 100, im.brightness.roundToInt(), { "$it" }) { v ->
+                    ui(false) { it.brightness = v.toFloat() }
+                })
+                box.addView(slider(R.string.p_contrast, -100, 100, im.contrast.roundToInt(), { "$it" }) { v ->
+                    ui(false) { it.contrast = v.toFloat() }
+                })
+                box.addView(slider(R.string.p_saturation, -100, 100, im.saturation.roundToInt(), { "$it" }) { v ->
+                    ui(false) { it.saturation = v.toFloat() }
+                })
+                box.addView(slider(R.string.p_warmth, -100, 100, im.warmth.roundToInt(), { "$it" }) { v ->
+                    ui(false) { it.warmth = v.toFloat() }
+                })
+                box.addView(chipRow(listOf(getString(R.string.p_reset), "B&W", getString(R.string.fl_vivid), getString(R.string.fl_warm), getString(R.string.fl_cool))) { i ->
+                    ui {
+                        when (i) {
+                            0 -> { it.brightness = 0f; it.contrast = 0f; it.saturation = 0f; it.warmth = 0f }
+                            1 -> { it.saturation = -100f; it.contrast = 10f }
+                            2 -> { it.saturation = 40f; it.contrast = 20f; it.brightness = 5f }
+                            3 -> { it.warmth = 45f; it.saturation = 15f; it.brightness = 5f }
+                            4 -> { it.warmth = -40f; it.saturation = 10f }
+                        }
+                    }
+                    openPanel("filter")
+                })
             }
 
             "border" -> if (im != null) {
