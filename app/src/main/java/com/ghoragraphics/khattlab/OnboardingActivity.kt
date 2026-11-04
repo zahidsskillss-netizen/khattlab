@@ -52,7 +52,7 @@ class OnboardingActivity : Activity() {
 
         // logo + welcome
         body.addView(ImageView(this).apply {
-            setImageResource(R.drawable.ic_launcher_fg)
+            setImageResource(R.mipmap.ic_launcher_fg)
             background = GradientDrawable().apply { setColor(0xFF23231C.toInt()); cornerRadius = dp(22).toFloat() }
         }, LinearLayout.LayoutParams(dp(96), dp(96)).apply { gravity = Gravity.CENTER_HORIZONTAL })
         body.addView(TextView(this).apply {
