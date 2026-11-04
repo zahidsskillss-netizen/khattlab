@@ -270,7 +270,7 @@
     <string name="bz_add">ټکي زیاتول</string>
     <string name="bz_curve">کږول</string>
     <string name="bz_move">ښورول</string>
-    <string name="bz_hint_add">پر پاڼه کېکاږئ چې نوی ټکی زیات شي؛ ټکی کش کړئ چې ځای یې بدل شي</string>
+    <string name="bz_hint_add">کېکاږه چې ټکی کېني؛ ونیسه او وښویه چې همالته کږه (curve) جوړه شي (لکه قلم). موجود ټکی وښویه چې ځای یې بدل شي.</string>
     <string name="bz_hint_curve">ټکی کش کړئ چې لاستي یې راووځي؛ آبي لاستي یا د ټوټې منځنۍ نښه کش کړئ چې کرښه کږه شي</string>
     <string name="bz_hint_move">ګوته کش کړئ چې ټوله کرښه بل ځای ته ولاړه شي</string>
     <string name="bz_actions">کارونه</string>

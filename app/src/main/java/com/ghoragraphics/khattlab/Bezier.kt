@@ -230,40 +230,67 @@ class DrawSession(val vector: Boolean) {
             if (p != null) grab = T_ALL
             return
         }
-        if (p == null) return
-        val pts = p.pts
-        val n = pts.size / 2
-        val c = p.ctrl ?: FloatArray(n * 4).also { p.ctrl = it }
-        if (bezMode == MODE_CURVE) {
-            // handles first (they sit on top)
+        if (p != null) {
+            val pts = p.pts
+            val n = pts.size / 2
+            val c = p.ctrl ?: FloatArray(n * 4).also { p.ctrl = it }
+            if (bezMode == MODE_CURVE) {
+                // handles first (they sit on top)
+                var best = r
+                for (i in 0 until n) {
+                    for (h in 0..1) {
+                        val hx = c[4 * i + 2 * h]
+                        val hy = c[4 * i + 2 * h + 1]
+                        if (hx == 0f && hy == 0f) continue
+                        val d = hypot(pts[2 * i] + hx - x, pts[2 * i + 1] + hy - y)
+                        if (d < best) { best = d; grab = if (h == 0) T_IN else T_OUT; grabIndex = i }
+                    }
+                }
+                if (grab != T_NONE) return
+            }
             var best = r
             for (i in 0 until n) {
-                for (h in 0..1) {
-                    val hx = c[4 * i + 2 * h]
-                    val hy = c[4 * i + 2 * h + 1]
-                    if (hx == 0f && hy == 0f) continue
-                    val d = hypot(pts[2 * i] + hx - x, pts[2 * i + 1] + hy - y)
-                    if (d < best) { best = d; grab = if (h == 0) T_IN else T_OUT; grabIndex = i }
-                }
+                val d = hypot(pts[2 * i] - x, pts[2 * i + 1] - y)
+                if (d < best) { best = d; grabIndex = i; grab = if (bezMode == MODE_CURVE) T_PULL else T_POINT }
             }
             if (grab != T_NONE) return
-        }
-        var best = r
-        for (i in 0 until n) {
-            val d = hypot(pts[2 * i] - x, pts[2 * i + 1] - y)
-            if (d < best) { best = d; grabIndex = i; grab = if (bezMode == MODE_CURVE) T_PULL else T_POINT }
-        }
-        if (grab != T_NONE) return
-        if (bezMode == MODE_CURVE) {
-            val segs = if (p.closed) n else n - 1
-            best = r
-            val m = FloatArray(2)
-            for (i in 0 until segs) {
-                segMid(p, i, m)
-                val d = hypot(m[0] - x, m[1] - y)
-                if (d < best) { best = d; grabIndex = i; grab = T_SEG }
+            if (bezMode == MODE_CURVE) {
+                val segs = if (p.closed) n else n - 1
+                best = r
+                val m = FloatArray(2)
+                for (i in 0 until segs) {
+                    segMid(p, i, m)
+                    val d = hypot(m[0] - x, m[1] - y)
+                    if (d < best) { best = d; grabIndex = i; grab = T_SEG }
+                }
+                return
             }
         }
+        // classic pen: in ADD mode, a press on an empty spot drops a new point right away.
+        // If the finger then drags, it pulls out that point's handles (a smooth curve point).
+        if (bezMode == MODE_ADD) {
+            addPointAt(x, y)
+            grab = T_PULL
+            grabIndex = selPoint
+            changed = true   // addPointAt already recorded an undo step
+        }
+    }
+
+    /** Appends a new point to the current line (starting a line if there is none). */
+    private fun addPointAt(x: Float, y: Float) {
+        remember()
+        val p = path
+        if (p == null) {
+            paths.add(newStroke(x, y))
+            index = paths.size - 1
+            selPoint = 0
+            return
+        }
+        val n = p.pts.size / 2
+        p.fixCtrl()
+        p.pts = p.pts.copyOf(p.pts.size + 2).also { it[2 * n] = x; it[2 * n + 1] = y }
+        p.ctrl = (p.ctrl ?: FloatArray(n * 4)).copyOf((n + 1) * 4)
+        selPoint = n
     }
 
     /** Returns true when something changed (so the page is redrawn). */

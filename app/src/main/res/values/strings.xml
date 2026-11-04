@@ -270,7 +270,7 @@
     <string name="bz_add">Add points</string>
     <string name="bz_curve">Curve</string>
     <string name="bz_move">Move</string>
-    <string name="bz_hint_add">Tap the page to add a new point; drag a point to move it</string>
+    <string name="bz_hint_add">Tap to drop a point; press and drag to curve it as you place it (like a pen). Drag an existing point to move it.</string>
     <string name="bz_hint_curve">Drag a point to pull out handles; drag the blue handles or a segment midpoint to curve the line</string>
     <string name="bz_hint_move">Drag to move the whole line somewhere else</string>
     <string name="bz_actions">Actions</string>
