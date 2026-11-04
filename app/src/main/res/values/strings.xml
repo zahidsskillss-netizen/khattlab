@@ -452,4 +452,7 @@
     <string name="echo_done">تکرار جوړ شو</string>
     <string name="grad_aim">په پاڼه کې لوری ورکړئ</string>
     <string name="grad_aim_hint">پر پاڼه په ګوته کش کړئ چې د ګرادینټ لوری وټاکئ</string>
+    <string name="t_multi">څو انتخاب</string>
+    <string name="multi_on">څو-ګونی انتخاب: پر توکو کېکاږئ چې وټاکل شي؛ بیا یې یوځای وخوځوئ</string>
+    <string name="multi_empty">لومړی یو څه پر پاڼه کېږدئ</string>
 </resources>

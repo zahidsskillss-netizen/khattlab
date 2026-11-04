@@ -242,6 +242,7 @@ class MainActivity : Activity(), EditorView.Listener {
 
     override fun onSelectionChanged(layer: Layer?) {
         if (layersBox.visibility == View.VISIBLE) rebuildLayers()
+        if (editor.multiMode) { refreshTools(); return }
         val key = activeTool
         when {
             key == null -> refreshTools()
@@ -362,6 +363,18 @@ class MainActivity : Activity(), EditorView.Listener {
             toolButton("done", R.drawable.ic_check, R.string.t_done) { editor.select(null) }
         )
         val items = when {
+            editor.multiMode -> listOf(
+                toolButton("mdone", R.drawable.ic_check, R.string.t_done) { editor.multiMode = false; refreshTools() },
+                toolButton("mdel", R.drawable.ic_delete, R.string.t_delete) { editor.deleteMulti() },
+                toolButton("mcopy", R.drawable.ic_content_copy, R.string.t_copy) { editor.duplicateMulti() },
+                toolButton("mleft", R.drawable.ic_align_horizontal_center, R.string.p_left) { editor.alignMulti(2, null) },
+                toolButton("mcx", R.drawable.ic_align_horizontal_center, R.string.p_center) { editor.alignMulti(1, null) },
+                toolButton("mright", R.drawable.ic_align_horizontal_center, R.string.p_right) { editor.alignMulti(0, null) },
+                toolButton("mtop", R.drawable.ic_align_horizontal_center, R.string.p_top) { editor.alignMulti(null, 0) },
+                toolButton("mmid", R.drawable.ic_align_horizontal_center, R.string.p_middle) { editor.alignMulti(null, 1) },
+                toolButton("mbot", R.drawable.ic_align_horizontal_center, R.string.p_bottom) { editor.alignMulti(null, 2) }
+            )
+
             editor.drawing != null -> listOf(
                 toolButton("dok", R.drawable.ic_check, R.string.t_done) { editor.finishDrawing(true); closePanel() },
                 toolButton("dundo", R.drawable.ic_undo, R.string.undo) { editor.undoDrawStep() },
@@ -420,6 +433,10 @@ class MainActivity : Activity(), EditorView.Listener {
             ) + arrange + common + tail
             else -> listOf(
                 toolButton("smart", R.drawable.ic_auto_awesome, R.string.t_smart) { openSmartDesigner() },
+                toolButton("multi", R.drawable.ic_select_all, R.string.t_multi) {
+                    if (editor.layers.isEmpty()) toast(R.string.multi_empty)
+                    else { editor.multiMode = true; toast(R.string.multi_on); refreshTools() }
+                },
                 panelTool("projects", R.drawable.ic_folder, R.string.t_projects),
                 panelTool("templates", R.drawable.ic_dashboard_customize, R.string.t_templates),
                 toolButton("add", R.drawable.ic_text_fields, R.string.t_add_text) { promptText(null) },

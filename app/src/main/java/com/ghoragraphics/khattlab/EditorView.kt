@@ -324,6 +324,68 @@ class EditorView @JvmOverloads constructor(
         select(null)
     }
 
+    // ---------- multi-select ----------
+    val multi = mutableListOf<Layer>()
+    var multiMode = false
+        set(v) {
+            field = v
+            if (!v) multi.clear() else select(null)
+            listener?.onSelectionChanged(null)
+            invalidate()
+        }
+
+    fun toggleMulti(l: Layer) {
+        if (!multi.remove(l)) multi.add(l)
+        listener?.onSelectionChanged(null)
+        invalidate()
+    }
+
+    private fun moveMulti(dx: Float, dy: Float) {
+        for (l in multi) { l.x += dx; l.y += dy }
+        invalidate()
+    }
+
+    fun deleteMulti() {
+        if (multi.isEmpty()) return
+        commit()
+        layers.removeAll(multi.toSet())
+        multi.clear()
+        listener?.onSelectionChanged(null)
+        invalidate()
+    }
+
+    fun duplicateMulti() {
+        if (multi.isEmpty()) return
+        commit()
+        val copies = multi.map { val c = it.copy(); c.x += doc.width * 0.04f; c.y += doc.height * 0.04f; c }
+        layers.addAll(copies)
+        multi.clear(); multi.addAll(copies)
+        listener?.onSelectionChanged(null)
+        invalidate()
+    }
+
+    /** Union box of the selected layers on the page. */
+    private fun multiBounds(): RectF {
+        val r = RectF()
+        var first = true
+        for (l in multi) {
+            val b = l.pageBounds(fonts)
+            if (first) { r.set(b); first = false } else r.union(b)
+        }
+        return r
+    }
+
+    fun alignMulti(h: Int?, v: Int?) {
+        if (multi.isEmpty()) return
+        commit()
+        val b = multiBounds()
+        for (l in multi) {
+            when (h) { 0 -> l.x += doc.width - b.right; 1 -> l.x += doc.width / 2f - b.centerX(); 2 -> l.x += -b.left }
+            when (v) { 0 -> l.y += -b.top; 1 -> l.y += doc.height / 2f - b.centerY(); 2 -> l.y += doc.height - b.bottom }
+        }
+        invalidate()
+    }
+
     fun duplicateSelected() {
         val s = selected ?: return
         commit()
@@ -704,6 +766,29 @@ class EditorView @JvmOverloads constructor(
             return
         }
 
+        if (multiMode) {
+            // dashed box around every chosen layer plus one around them all
+            val union = RectF()
+            var first = true
+            for (m in multi) {
+                selectionCorners(m)
+                selPath.reset()
+                selPath.moveTo(corners[0], corners[1]); selPath.lineTo(corners[2], corners[3])
+                selPath.lineTo(corners[4], corners[5]); selPath.lineTo(corners[6], corners[7]); selPath.close()
+                canvas.drawPath(selPath, selPaint)
+                for (i in 0 until 4) {
+                    val x = corners[2 * i]; val y = corners[2 * i + 1]
+                    if (first) { union.set(x, y, x, y); first = false } else union.union(x, y)
+                }
+            }
+            if (multi.size > 1) {
+                framePaint.color = gold
+                canvas.drawRect(union.left - 6f, union.top - 6f, union.right + 6f, union.bottom + 6f, selPaint)
+                framePaint.color = 0x33FFFFFF
+            }
+            return
+        }
+
         val s = selected ?: return
         if (s.hidden) return
         if (perspEdit && !s.locked) {
@@ -993,6 +1078,36 @@ class EditorView @JvmOverloads constructor(
         }
     }
 
+    private var multiGrab = false
+
+    private fun multiTouch(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downVX = e.x; downVY = e.y; moved = false; committed = false
+                lastX = toDocX(e.x); lastY = toDocY(e.y)
+                val hit = hitTest(lastX, lastY)
+                multiGrab = hit != null && multi.contains(hit)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!multiGrab) return true
+                if (!moved && hypot(e.x - downVX, e.y - downVY) < touchSlop) return true
+                moved = true
+                commitOnce()
+                val dx = toDocX(e.x); val dy = toDocY(e.y)
+                moveMulti(dx - lastX, dy - lastY)
+                lastX = dx; lastY = dy
+            }
+            MotionEvent.ACTION_UP -> {
+                if (!moved) {
+                    val hit = hitTest(toDocX(e.x), toDocY(e.y))
+                    if (hit != null) toggleMulti(hit)
+                }
+                multiGrab = false
+            }
+        }
+        return true
+    }
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
         colorPick?.let { cb ->
             if (e.actionMasked == MotionEvent.ACTION_UP) {
@@ -1002,6 +1117,7 @@ class EditorView @JvmOverloads constructor(
             return true
         }
         if (gradientAim != null) return aimTouch(e)
+        if (multiMode) return multiTouch(e)
         drawing?.let { return drawTouch(it, e) }
         val adj = selected as? ShapeLayer
         if (imageAdjust && adj != null && adj.hasImage()) return imageTouch(adj, e)

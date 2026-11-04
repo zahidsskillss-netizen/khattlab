@@ -547,15 +547,27 @@ class TextLayer(var text: String, px: Float, py: Float) : Layer() {
 
         if (bevelActive) {
             val a = Math.toRadians(bevelAngle.toDouble())
-            val off = (textSize * bevelDepth / 100f * 0.18f).coerceAtLeast(1f)
-            val ox = cos(a).toFloat() * off
-            val oy = -sin(a).toFloat() * off
-            val blur = if (bevelSoft) off * 1.1f else off * 0.25f
+            val lx = cos(a).toFloat()
+            val ly = -sin(a).toFloat()
+            val off = (textSize * bevelDepth / 100f * 0.22f).coerceAtLeast(1.2f)
             val k = bevelStrength / 100f
-            // highlight band on the lit edge (erase a copy offset away from the light)
-            bevelBand(canvas, Color.argb((210 * k).toInt(), 255, 255, 255), -ox, -oy, blur)
-            // shadow band on the opposite edge
-            bevelBand(canvas, Color.argb((170 * k).toInt(), 0, 0, 0), ox, oy, blur)
+            // 1) a soft shaded face across the whole glyph so the surface reads as angled
+            lightPaint.shader = LinearGradient(
+                cW / 2f + lx * cW, cH / 2f + ly * cH, cW / 2f - lx * cW, cH / 2f - ly * cH,
+                Color.argb((70 * k).toInt(), 255, 255, 255), Color.argb((70 * k).toInt(), 0, 0, 0),
+                Shader.TileMode.CLAMP
+            )
+            lightPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_ATOP)
+            val pad = strokeWidth + 8f
+            canvas.drawRect(-pad, -pad, cW + pad, cH + pad, lightPaint)
+            // 2) crisp rim highlight on the lit edge and rim shadow on the far edge
+            val rimBlur = if (bevelSoft) off * 0.9f else off * 0.12f
+            bevelBand(canvas, Color.argb((235 * k).toInt(), 255, 255, 255), -lx * off, -ly * off, rimBlur)
+            bevelBand(canvas, Color.argb((200 * k).toInt(), 0, 0, 0), lx * off, ly * off, rimBlur)
+            // 3) a thin inner contour for a sharper chiselled edge
+            if (!bevelSoft) {
+                bevelBand(canvas, Color.argb((160 * k).toInt(), 255, 255, 255), -lx * off * 0.45f, -ly * off * 0.45f, off * 0.05f)
+            }
         }
 
         if (innerOn) {
