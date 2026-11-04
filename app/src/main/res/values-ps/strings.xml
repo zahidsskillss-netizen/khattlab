@@ -131,6 +131,11 @@
     <string name="t_perspective">پرسپکټیو</string>
     <string name="t_position">ځای</string>
     <string name="t_reflection">انعکاس</string>
+    <string name="cv_ratio">د اړخ نسبت</string>
+    <string name="cv_resolution">کیفیت (ریزولوشن)</string>
+    <string name="cv_custom">دلخواه</string>
+    <string name="cv_width">سور (پلنوالی)</string>
+    <string name="cv_height">لوړوالی</string>
     <string name="t_mask">ماسک</string>
     <string name="t_blend">ګډون</string>
     <string name="mask_enable">ماسک</string>

@@ -39,7 +39,45 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
         const val RING = 15
         const val HALF_CIRCLE = 16
         const val BURST = 17
-        const val COUNT = 18
+
+        /** First index of the extra SVG-path shapes; kinds >= this come from [SVG_SHAPES]. */
+        const val SVG_BASE = 18
+        /** Normalized path data (viewBox 0..100), scaled to the shape box. */
+        val SVG_SHAPES = arrayOf(
+            // pentagon
+            "M50,3 L95,37 L78,92 L22,92 L5,37 Z",
+            // hexagon
+            "M25,6 L75,6 L98,50 L75,94 L25,94 L2,50 Z",
+            // octagon
+            "M31,3 L69,3 L97,31 L97,69 L69,97 L31,97 L3,69 L3,31 Z",
+            // home / chevron pentagon
+            "M50,6 L92,40 L92,94 L8,94 L8,40 Z",
+            // cloud
+            "M25,74 C11,74 9,56 24,53 C21,36 47,33 51,47 C56,30 84,34 79,53 C94,55 91,74 76,74 Z",
+            // lightning bolt
+            "M58,3 L22,55 L46,55 L40,97 L80,40 L52,40 Z",
+            // shield
+            "M50,4 L90,18 L90,50 C90,75 72,92 50,98 C28,92 10,75 10,50 L10,18 Z",
+            // checkmark
+            "M12,55 L41,84 L94,31 L83,20 L41,62 L23,44 Z",
+            // waving flag
+            "M12,8 C35,2 65,16 90,8 L90,54 C65,62 35,48 12,54 Z",
+            // 4-point sparkle
+            "M50,2 C54,30 70,46 98,50 C70,54 54,70 50,98 C46,70 30,54 2,50 C30,46 46,30 50,2 Z",
+            // location pin
+            "M50,5 C31,5 17,19 17,39 C17,63 50,95 50,95 C50,95 83,63 83,39 C83,19 69,5 50,5 Z",
+            // crescent moon
+            "M62,7 C37,7 21,27 21,50 C21,73 37,93 62,93 C46,80 41,66 41,50 C41,34 46,20 62,7 Z",
+            // teardrop
+            "M50,4 C50,4 82,46 82,66 C82,84 68,96 50,96 C32,96 18,84 18,66 C18,46 50,4 50,4 Z",
+            // blob
+            "M52,8 C76,4 96,26 92,50 C88,74 74,96 48,92 C24,88 6,70 10,46 C14,22 28,12 52,8 Z",
+            // banner / ribbon
+            "M10,24 L90,24 L90,70 L72,59 L50,70 L28,59 L10,70 Z",
+            // bookmark
+            "M28,6 L72,6 L72,94 L50,75 L28,94 Z"
+        )
+        const val COUNT = SVG_BASE + 16
 
         fun isLine(k: Int) = k == LINE || k == LINE_ARROW || k == DOUBLE_ARROW
 
@@ -255,8 +293,70 @@ class ShapeLayer(var kind: Int, px: Float, py: Float) : Layer() {
                 path.op(hole, Path.Op.DIFFERENCE)
             }
             HALF_CIRCLE -> { path.arcTo(RectF(0f, 0f, W, H * 2f), 180f, 180f); path.close() }
+            in SVG_BASE until COUNT -> svgTo(SVG_SHAPES[kind - SVG_BASE], W, H)
             else -> { // lines: drawn along the middle
                 path.moveTo(0f, H / 2f); path.lineTo(W, H / 2f)
+            }
+        }
+    }
+
+    /** Builds [path] from normalized SVG path data (coords 0..100), scaled to W x H. */
+    private fun svgTo(data: String, W: Float, H: Float) {
+        val sx = W / 100f; val sy = H / 100f
+        var i = 0
+        val n = data.length
+        var cx = 0f; var cy = 0f   // current point (page px)
+        var sxp = 0f; var syp = 0f // sub-path start
+        var cmd = ' '
+        fun skip() { while (i < n && (data[i] == ' ' || data[i] == ',' || data[i] == '\n' || data[i] == '\t')) i++ }
+        fun num(): Float {
+            skip()
+            val st = i
+            if (i < n && (data[i] == '-' || data[i] == '+')) i++
+            while (i < n && (data[i].isDigit() || data[i] == '.')) i++
+            return data.substring(st, i).toFloat()
+        }
+        while (i < n) {
+            skip()
+            if (i >= n) break
+            val ch = data[i]
+            if (ch.isLetter()) { cmd = ch; i++ } // else repeat previous command
+            when (cmd) {
+                'M', 'm' -> {
+                    var x = num(); var y = num()
+                    if (cmd == 'm') { x += cx / sx; y += cy / sy }
+                    cx = x * sx; cy = y * sy; sxp = cx; syp = cy
+                    path.moveTo(cx, cy)
+                    cmd = if (cmd == 'm') 'l' else 'L'
+                }
+                'L', 'l' -> {
+                    var x = num(); var y = num()
+                    if (cmd == 'l') { x += cx / sx; y += cy / sy }
+                    cx = x * sx; cy = y * sy
+                    path.lineTo(cx, cy)
+                }
+                'H', 'h' -> {
+                    var x = num(); if (cmd == 'h') x += cx / sx
+                    cx = x * sx; path.lineTo(cx, cy)
+                }
+                'V', 'v' -> {
+                    var y = num(); if (cmd == 'v') y += cy / sy
+                    cy = y * sy; path.lineTo(cx, cy)
+                }
+                'C', 'c' -> {
+                    var x1 = num(); var y1 = num(); var x2 = num(); var y2 = num(); var x = num(); var y = num()
+                    if (cmd == 'c') { x1 += cx / sx; y1 += cy / sy; x2 += cx / sx; y2 += cy / sy; x += cx / sx; y += cy / sy }
+                    path.cubicTo(x1 * sx, y1 * sy, x2 * sx, y2 * sy, x * sx, y * sy)
+                    cx = x * sx; cy = y * sy
+                }
+                'Q', 'q' -> {
+                    var x1 = num(); var y1 = num(); var x = num(); var y = num()
+                    if (cmd == 'q') { x1 += cx / sx; y1 += cy / sy; x += cx / sx; y += cy / sy }
+                    path.quadTo(x1 * sx, y1 * sy, x * sx, y * sy)
+                    cx = x * sx; cy = y * sy
+                }
+                'Z', 'z' -> { path.close(); cx = sxp; cy = syp }
+                else -> i++
             }
         }
     }

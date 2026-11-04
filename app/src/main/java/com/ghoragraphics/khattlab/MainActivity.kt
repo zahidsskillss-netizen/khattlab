@@ -518,13 +518,37 @@ class MainActivity : Activity(), EditorView.Listener {
             "bgcolor" -> box.addView(swatchRow(editor.doc.color, false) { editor.setDocColor(it) })
 
             "canvas" -> {
-                val sizes = listOf(
-                    "1:1" to Pair(1080, 1080), "4:5" to Pair(1080, 1350), "9:16" to Pair(1080, 1920),
-                    "16:9" to Pair(1920, 1080), "3:4" to Pair(1080, 1440), "A4" to Pair(1240, 1754)
+                // aspect ratios, like Alight Motion
+                val ratios = listOf(
+                    "16:9" to Pair(16, 9), "9:16" to Pair(9, 16), "4:5" to Pair(4, 5),
+                    "1:1" to Pair(1, 1), "4:3" to Pair(4, 3), "3:4" to Pair(3, 4)
                 )
-                box.addView(chipRow(sizes.map { it.first }) { i ->
-                    val p = sizes[i].second
-                    editor.setDocSize(p.first, p.second)
+                val dw = editor.doc.width; val dh = editor.doc.height
+                val curRatio = ratios.indexOfFirst { (_, r) -> dw.toLong() * r.second == dh.toLong() * r.first }
+                box.addView(label(R.string.cv_ratio))
+                box.addView(chipRow(ratios.map { it.first } + getString(R.string.cv_custom), curRatio) { i ->
+                    if (i >= ratios.size) { customSizeDialog(); return@chipRow }
+                    val r = ratios[i].second
+                    val (w, h) = ratioSize(r.first, r.second, canvasResLong)
+                    editor.setDocSize(w, h)
+                    openPanel("canvas")
+                })
+                // resolution (longest side)
+                val res = listOf(720, 1080, 1440, 2160)
+                val resNames = listOf("720p", "1080p", "2K", "4K")
+                val longNow = max(dw, dh)
+                box.addView(label(R.string.cv_resolution))
+                box.addView(chipRow(resNames, res.indexOf(longNow)) { i ->
+                    canvasResLong = res[i]
+                    // keep the current ratio, change only the resolution
+                    val g = gcdOf(dw, dh).coerceAtLeast(1)
+                    val (w, h) = ratioSize(dw / g, dh / g, canvasResLong)
+                    editor.setDocSize(w, h)
+                    openPanel("canvas")
+                })
+                box.addView(TextView(this).apply {
+                    text = "${editor.doc.width} × ${editor.doc.height} px"
+                    textSize = 13f; setTextColor(textDim); setPadding(dp(4), dp(10), dp(4), dp(2))
                 })
             }
 
@@ -1608,6 +1632,7 @@ class MainActivity : Activity(), EditorView.Listener {
     }
 
     // echo settings kept between opens
+    private var canvasResLong = 1080   // longest side in pixels for the canvas size chips
     private var echoCount = 5
     private var echoX = 6
     private var echoY = 6
@@ -1958,6 +1983,36 @@ class MainActivity : Activity(), EditorView.Listener {
     private fun buildShapesPanel(box: LinearLayout) {
         box.addView(label(R.string.p_pick_shape))
         box.addView(shapeGrid(-1) { k -> editor.addShape(k) })
+    }
+
+    private fun gcdOf(a: Int, b: Int): Int { var x = a; var y = b; while (y != 0) { val t = y; y = x % y; x = t }; return if (x < 0) -x else x }
+
+    /** Pixel size for an aspect ratio with the given longest side. */
+    private fun ratioSize(rw: Int, rh: Int, long: Int): Pair<Int, Int> {
+        fun even(v: Int) = (v / 2) * 2
+        return if (rw >= rh) even(long) to even((long.toLong() * rh / rw).toInt())
+        else even((long.toLong() * rw / rh).toInt()) to even(long)
+    }
+
+    private fun customSizeDialog() {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(10), dp(20), dp(4)) }
+        fun field(hint: Int, value: Int): EditText = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setHint(hint); setText(value.toString()); setTextColor(textMain)
+        }
+        val wf = field(R.string.cv_width, editor.doc.width)
+        val hf = field(R.string.cv_height, editor.doc.height)
+        box.addView(label(R.string.cv_width)); box.addView(wf)
+        box.addView(label(R.string.cv_height)); box.addView(hf)
+        AlertDialog.Builder(this).setTitle(R.string.cv_custom).setView(box)
+            .setPositiveButton(R.string.ok) { _, _ ->
+                val w = (wf.text.toString().toIntOrNull() ?: editor.doc.width).coerceIn(80, 8000)
+                val h = (hf.text.toString().toIntOrNull() ?: editor.doc.height).coerceIn(80, 8000)
+                editor.setDocSize(w, h)
+                openPanel("canvas")
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun buildStickersPanel(box: LinearLayout) {

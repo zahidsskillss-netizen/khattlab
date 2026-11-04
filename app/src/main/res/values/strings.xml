@@ -131,6 +131,11 @@
     <string name="t_perspective">Perspective</string>
     <string name="t_position">Position</string>
     <string name="t_reflection">Reflection</string>
+    <string name="cv_ratio">Aspect ratio</string>
+    <string name="cv_resolution">Resolution</string>
+    <string name="cv_custom">Custom</string>
+    <string name="cv_width">Width</string>
+    <string name="cv_height">Height</string>
     <string name="t_mask">Mask</string>
     <string name="t_blend">Blend</string>
     <string name="mask_enable">Mask</string>
