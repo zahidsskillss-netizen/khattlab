@@ -4,7 +4,7 @@
     android:layout_height="match_parent"
     android:background="@color/bg"
     android:fitsSystemWindows="true"
-    android:layoutDirection="rtl"
+    android:layoutDirection="locale"
     android:orientation="vertical">
 
     <LinearLayout

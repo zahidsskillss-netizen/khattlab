@@ -20,6 +20,10 @@ import kotlin.math.roundToInt
 
 /** Shown instead of the editor once the test days are over. */
 class ExpiredActivity : Activity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(LocaleManager.wrap(newBase))
+    }
+
 
     private val bg = 0xFF141416.toInt()
     private val gold = 0xFFE8B547.toInt()
@@ -36,7 +40,7 @@ class ExpiredActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            layoutDirection = View.LAYOUT_DIRECTION_LOCALE
             setPadding(dp(24), dp(48), dp(24), dp(32))
         }
         root.addView(ImageView(this).apply { setImageResource(R.drawable.app_logo) }, LinearLayout.LayoutParams(dp(110), dp(110)))

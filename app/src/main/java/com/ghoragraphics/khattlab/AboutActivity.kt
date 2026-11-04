@@ -20,6 +20,10 @@ import kotlin.math.roundToInt
 
 /** About the app and about its developer (same idea as in Zikr Yad). */
 class AboutActivity : Activity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(LocaleManager.wrap(newBase))
+    }
+
 
     companion object {
         // only Telegram for contact (for now)
@@ -53,7 +57,7 @@ class AboutActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            layoutDirection = View.LAYOUT_DIRECTION_LOCALE
             setPadding(0, 0, 0, dp(32))
         }
         build(root)

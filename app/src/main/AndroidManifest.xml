@@ -71,6 +71,11 @@
             android:exported="false"
             android:screenOrientation="portrait" />
 
+        <activity
+            android:name=".OnboardingActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
         <provider
             android:name=".ShareProvider"
             android:authorities="com.ghoragraphics.nawakhtgar.share"

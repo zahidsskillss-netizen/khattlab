@@ -86,15 +86,16 @@ class EditorView @JvmOverloads constructor(
     private var offX = 0f
     private var offY = 0f
 
-    // user zoom / pan of the whole canvas (1 = fit to screen)
+    // user zoom / pan of the whole canvas (viewScale = 1 is fit-to-screen).
+    // The displayed transform is: screen = (baseOff + doc*baseFit) * viewScale + pan
+    // so panX/panY are a scale-about-origin translation — zoom stays anchored on the fingers.
     private var viewScale = 1f
-    private var viewTx = 0f
-    private var viewTy = 0f
+    private var panX = 0f
+    private var panY = 0f
     /** When on, every touch pans/zooms the canvas instead of moving layers. */
     var viewMode = false
         set(v) { field = v; invalidate() }
     private var vStartSpan = 1f
-    private var vStartScale = 1f
     private var vLastFx = 0f
     private var vLastFy = 0f
     private var viewing = false
@@ -103,50 +104,57 @@ class EditorView @JvmOverloads constructor(
 
     /** Back to fit-to-screen. */
     fun resetView() {
-        viewScale = 1f; viewTx = 0f; viewTy = 0f
+        viewScale = 1f; panX = 0f; panY = 0f
         invalidate()
+    }
+
+    private fun baseFitOf(): Float {
+        val m = 20f * density
+        return min(((width - 2 * m).coerceAtLeast(1f)) / doc.width, ((height - 2 * m).coerceAtLeast(1f)) / doc.height)
     }
 
     /** Keeps the canvas from being dragged completely off-screen. */
     private fun clampView() {
         viewScale = viewScale.coerceIn(1f, 8f)
-        val baseFit = min(
-            ((width - 40f * density).coerceAtLeast(1f)) / doc.width,
-            ((height - 40f * density).coerceAtLeast(1f)) / doc.height
-        )
-        val f = baseFit * viewScale
+        val bf = baseFitOf()
+        val baseOffX = (width - doc.width * bf) / 2f
+        val baseOffY = (height - doc.height * bf) / 2f
+        val f = bf * viewScale
         val dw = doc.width * f
         val dh = doc.height * f
-        val baseX = (width - dw) / 2f
-        val baseY = (height - dh) / 2f
-        // allow a small margin of overscroll
-        val mx = width * 0.4f
-        val my = height * 0.4f
-        viewTx = viewTx.coerceIn(-(baseX + dw) + mx, width - baseX - mx)
-        viewTy = viewTy.coerceIn(-(baseY + dh) + my, height - baseY - my)
+        // current left/top on screen = baseOff*viewScale + pan; keep part of the page visible
+        val mx = min(width * 0.5f, dw)
+        val my = min(height * 0.5f, dh)
+        val leftMin = width - mx - baseOffX * viewScale
+        val leftMax = mx - dw - baseOffX * viewScale
+        panX = panX.coerceIn(min(leftMin, leftMax), max(leftMin, leftMax))
+        val topMin = height - my - baseOffY * viewScale
+        val topMax = my - dh - baseOffY * viewScale
+        panY = panY.coerceIn(min(topMin, topMax), max(topMin, topMax))
     }
 
-    /** Pinch-zoom and pan the canvas. Returns true while the gesture owns the touch. */
+    /** Pinch-zoom and pan the canvas, anchored on the point between the fingers. */
     private fun canvasGesture(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_POINTER_DOWN -> if (e.pointerCount >= 2) {
                 viewing = true
                 vStartSpan = spacing(e).coerceAtLeast(1f)
-                vStartScale = viewScale
                 vLastFx = (e.getX(0) + e.getX(1)) / 2f
                 vLastFy = (e.getY(0) + e.getY(1)) / 2f
             }
             MotionEvent.ACTION_MOVE -> if (viewing && e.pointerCount >= 2) {
                 val fx = (e.getX(0) + e.getX(1)) / 2f
                 val fy = (e.getY(0) + e.getY(1)) / 2f
-                val ns = (vStartScale * spacing(e) / vStartSpan).coerceIn(1f, 8f)
-                // keep the point under the fingers steady while zooming
-                val k = ns / viewScale
-                viewTx = fx - (fx - viewTx) * k
-                viewTy = fy - (fy - viewTy) * k
+                val ns = (viewScale * spacing(e) / vStartSpan).coerceIn(1f, 8f)
+                // scale about the focal point: the doc point under the fingers stays put
+                val r = ns / viewScale
+                panX = fx - r * (fx - panX)
+                panY = fy - r * (fy - panY)
                 viewScale = ns
-                viewTx += fx - vLastFx
-                viewTy += fy - vLastFy
+                vStartSpan = spacing(e).coerceAtLeast(1f)
+                // follow the fingers as they also slide
+                panX += fx - vLastFx
+                panY += fy - vLastFy
                 vLastFx = fx; vLastFy = fy
                 clampView()
                 invalidate()
@@ -163,8 +171,8 @@ class EditorView @JvmOverloads constructor(
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> { vLastFx = e.x; vLastFy = e.y }
             MotionEvent.ACTION_MOVE -> {
-                viewTx += e.x - vLastFx
-                viewTy += e.y - vLastFy
+                panX += e.x - vLastFx
+                panY += e.y - vLastFy
                 vLastFx = e.x; vLastFy = e.y
                 clampView()
                 invalidate()
@@ -705,9 +713,11 @@ class EditorView @JvmOverloads constructor(
         val aw = (width - 2 * m).coerceAtLeast(1f)
         val ah = (height - 2 * m).coerceAtLeast(1f)
         val baseFit = min(aw / doc.width, ah / doc.height)
+        val baseOffX = (width - doc.width * baseFit) / 2f
+        val baseOffY = (height - doc.height * baseFit) / 2f
         fit = baseFit * viewScale
-        offX = (width - doc.width * fit) / 2f + viewTx
-        offY = (height - doc.height * fit) / 2f + viewTy
+        offX = baseOffX * viewScale + panX
+        offY = baseOffY * viewScale + panY
     }
 
     private fun drawDoc(canvas: Canvas) {

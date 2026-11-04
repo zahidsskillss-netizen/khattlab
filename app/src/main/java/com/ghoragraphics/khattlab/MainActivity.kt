@@ -48,6 +48,10 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 class MainActivity : Activity(), EditorView.Listener {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(LocaleManager.wrap(newBase))
+    }
+
 
     companion object {
         private const val REQ_BG_IMAGE = 11
@@ -58,6 +62,7 @@ class MainActivity : Activity(), EditorView.Listener {
         private const val REQ_REPLACE = 16
         private const val REQ_SHAPE_IMG = 17
         private const val REQ_BG_REMOVE = 18
+        private const val REQ_ONBOARD = 30
         private const val REQ_PLP_SAVE = 19
         private const val REQ_PLP_OPEN = 20
         private const val REQ_FONT_TREE = 21
@@ -129,6 +134,10 @@ class MainActivity : Activity(), EditorView.Listener {
         if (Trial.expired(this)) {
             showExpired()
             return
+        }
+        if (!LocaleManager.hasChosen(this)) {
+            @Suppress("DEPRECATION")
+            startActivityForResult(Intent(this, OnboardingActivity::class.java), REQ_ONBOARD)
         }
         setContentView(R.layout.activity_main)
 
@@ -441,6 +450,7 @@ class MainActivity : Activity(), EditorView.Listener {
                     if (editor.layers.isEmpty()) toast(R.string.multi_empty)
                     else { editor.multiMode = true; toast(R.string.multi_on); refreshTools() }
                 },
+                toolButton("language", R.drawable.ic_language, R.string.t_language) { pickLanguage() },
                 panelTool("projects", R.drawable.ic_folder, R.string.t_projects),
                 panelTool("templates", R.drawable.ic_dashboard_customize, R.string.t_templates),
                 toolButton("add", R.drawable.ic_text_fields, R.string.t_add_text) { promptText(null) },
@@ -1595,6 +1605,28 @@ class MainActivity : Activity(), EditorView.Listener {
         }
     }
 
+    // ================= language =================
+
+    private fun pickLanguage() {
+        val names = LocaleManager.LANGUAGES.map {
+            val id = resources.getIdentifier("lang_$it", "string", packageName)
+            if (id != 0) getString(id) else it
+        }.toTypedArray()
+        val cur = LocaleManager.LANGUAGES.indexOf(LocaleManager.lang(this))
+        AlertDialog.Builder(this)
+            .setTitle(R.string.lang_title)
+            .setSingleChoiceItems(names, cur) { d, which ->
+                val code = LocaleManager.LANGUAGES[which]
+                d.dismiss()
+                if (code != LocaleManager.lang(this)) {
+                    LocaleManager.setLang(this, code)
+                    recreate()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
     // ================= zoom / pan =================
 
     private fun toggleZoom(btn: ImageView) {
@@ -1636,7 +1668,7 @@ class MainActivity : Activity(), EditorView.Listener {
         val dlg = Dialog(this, android.R.style.Theme_DeviceDefault_Light_NoActionBar)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            layoutDirection = View.LAYOUT_DIRECTION_LOCALE
             setBackgroundColor(0xFFF3F3F6.toInt())
         }
         val head = LinearLayout(this).apply {
@@ -2335,7 +2367,7 @@ class MainActivity : Activity(), EditorView.Listener {
         val dlg = Dialog(this, android.R.style.Theme_DeviceDefault_Light_NoActionBar)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            layoutDirection = View.LAYOUT_DIRECTION_LOCALE
             setBackgroundColor(0xFFF3F3F6.toInt())
         }
         val head = LinearLayout(this).apply {
@@ -3025,6 +3057,11 @@ class MainActivity : Activity(), EditorView.Listener {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_ONBOARD) {
+            // the language may have changed during onboarding
+            recreate()
+            return
+        }
         if (requestCode == REQ_BG_REMOVE) {
             val out = BgHolder.output
             BgHolder.output = null
@@ -3103,7 +3140,7 @@ class MainActivity : Activity(), EditorView.Listener {
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(8), dp(18), dp(4))
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            layoutDirection = View.LAYOUT_DIRECTION_LOCALE
         }
         val dialog = AlertDialog.Builder(this).setTitle(R.string.exp_title).setView(ScrollView(this).apply { addView(box) }).create()
         fun build() {

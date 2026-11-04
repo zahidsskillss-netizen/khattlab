@@ -48,6 +48,10 @@ object BgHolder {
  *  - Erase / Restore: paint with the finger; two fingers move and zoom
  */
 class BgRemoveActivity : Activity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(LocaleManager.wrap(newBase))
+    }
+
 
     private lateinit var orig: Bitmap
     private lateinit var work: Bitmap
@@ -90,7 +94,7 @@ class BgRemoveActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(bg)
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            layoutDirection = View.LAYOUT_DIRECTION_LOCALE
         }
 
         // ---- top bar: close, title, undo, done ----
