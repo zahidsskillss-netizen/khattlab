@@ -55,6 +55,17 @@ class EditorView @JvmOverloads constructor(
     private var warpCorner = -1
     private var grabDX = 0f
     private var grabDY = 0f
+
+    /** When on (mask panel open), the selected layer shows two handles for the mask line. */
+    var maskEdit = false
+        set(v) { field = v; invalidate() }
+    private var maskGrab = -1            // 0 = A, 1 = B
+    private val maskPt = FloatArray(2)
+    private val maskLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; strokeWidth = 2f * density; color = 0xFFFFFFFF.toInt()
+    }
+    private val maskDotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt() }
+    private val maskDotFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFE91E63.toInt() }
     private val warpPts = FloatArray(8)
     private val warpLine = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -820,6 +831,7 @@ class EditorView @JvmOverloads constructor(
         selPath.lineTo(corners[6], corners[7])
         selPath.close()
         canvas.drawPath(selPath, selPaint)
+        if (maskEdit && s.maskOn && !s.locked) { drawMask(s, canvas); return }
         if (s.locked) return
         if (imageAdjust && s is ShapeLayer && s.hasImage()) {
             selPaint.color = 0xFF1E88E5.toInt()
@@ -930,6 +942,55 @@ class EditorView @JvmOverloads constructor(
         if (!committed) {
             commit()
             committed = true
+        }
+    }
+
+    // ---- mask line editing ----
+    private fun maskHandleView(s: Layer, which: Int): FloatArray {
+        s.maskHandlePage(fonts, which, maskPt)
+        return floatArrayOf(offX + maskPt[0] * fit, offY + maskPt[1] * fit)
+    }
+
+    private fun hitMaskHandle(s: Layer, vx: Float, vy: Float): Int {
+        val r = 30f * density
+        var best = -1; var bestD = r
+        for (i in 0..1) {
+            val p = maskHandleView(s, i)
+            val d = hypot(vx - p[0], vy - p[1])
+            if (d <= bestD) { bestD = d; best = i }
+        }
+        return best
+    }
+
+    private fun maskTouch(s: Layer, e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                committed = false
+                maskGrab = hitMaskHandle(s, e.x, e.y)
+                invalidate()
+            }
+            MotionEvent.ACTION_MOVE -> if (maskGrab >= 0) {
+                commitOnce()
+                s.setMaskHandleFromPage(fonts, maskGrab, toDocX(e.x), toDocY(e.y))
+                invalidate()
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                maskGrab = -1
+                if (committed) listener?.onDrawChanged()
+                invalidate()
+            }
+        }
+        return true
+    }
+
+    private fun drawMask(s: Layer, canvas: Canvas) {
+        val a = maskHandleView(s, 0)
+        val b = maskHandleView(s, 1)
+        canvas.drawLine(a[0], a[1], b[0], b[1], maskLinePaint)
+        for (p in listOf(a, b)) {
+            canvas.drawCircle(p[0], p[1], 11f * density, maskDotFill)
+            canvas.drawCircle(p[0], p[1], 11f * density, maskDotPaint.also { it.style = Paint.Style.STROKE; it.strokeWidth = 2f * density })
+            maskDotPaint.style = Paint.Style.FILL
         }
     }
 
@@ -1233,6 +1294,7 @@ class EditorView @JvmOverloads constructor(
         drawing?.let { return drawTouch(it, e) }
         val adj = selected as? ShapeLayer
         if (imageAdjust && adj != null && adj.hasImage()) return imageTouch(adj, e)
+        selected?.let { if (maskEdit && it.maskOn && !it.locked) return maskTouch(it, e) }
         // dedicated zoom/pan tool: every touch moves the canvas
         if (viewMode) {
             gestures.onTouchEvent(e)

@@ -76,7 +76,7 @@ class MainActivity : Activity(), EditorView.Listener {
         )
 
         private val MAIN_PANELS = setOf("bgcolor", "canvas", "projects", "templates", "shapes", "stickers", "draw", "vector")
-        private val COMMON_PANELS = setOf("position", "relpos", "size", "opacity", "rotate", "persp", "rot3d", "reflect", "echo")
+        private val COMMON_PANELS = setOf("position", "relpos", "size", "opacity", "rotate", "persp", "rot3d", "reflect", "echo", "mask", "blend")
         private val TEXT_PANELS = COMMON_PANELS + setOf(
             "styles", "font", "style", "color", "texture", "curve", "background", "align", "spacing",
             "stroke", "shadow", "inner", "emboss", "bevel", "glow", "depth", "floor"
@@ -369,6 +369,8 @@ class MainActivity : Activity(), EditorView.Listener {
             toolButton("back", R.drawable.ic_flip_to_back, R.string.t_to_back) { editor.moveSelected(false) }
         )
         val tail = listOf(
+            panelTool("mask", R.drawable.ic_gradient, R.string.t_mask),
+            panelTool("blend", R.drawable.ic_opacity, R.string.t_blend),
             panelTool("persp", R.drawable.ic_crop_rotate, R.string.t_perspective),
             panelTool("rot3d", R.drawable.ic_three_d_rotation, R.string.t_rotate3d),
             panelTool("reflect", R.drawable.ic_flip, R.string.t_reflection),
@@ -481,6 +483,7 @@ class MainActivity : Activity(), EditorView.Listener {
     private fun closePanel() {
         editor.imageAdjust = false
         editor.perspEdit = false
+        editor.maskEdit = false
         activeTool = null
         panelHost.removeAllViews()
         panelHost.visibility = View.GONE
@@ -497,6 +500,7 @@ class MainActivity : Activity(), EditorView.Listener {
     private fun openPanel(key: String) {
         if (key != "simage") editor.imageAdjust = false
         editor.perspEdit = key == "persp"
+        editor.maskEdit = key == "mask"
         val keepScroll = if (activeTool == key) panelScroll?.scrollY ?: 0 else 0
         activeTool = key
         panelHost.removeAllViews()
@@ -790,6 +794,36 @@ class MainActivity : Activity(), EditorView.Listener {
                 })
                 box.addView(slider(R.string.p_opacity, 0, 100, (s.reflectAlpha * 100f / 255f).roundToInt(), { "$it%" }) { v ->
                     editor.update(false) { it.reflectAlpha = (v * 255f / 100f).roundToInt() }
+                })
+            }
+
+            "mask" -> if (s != null) {
+                box.addView(label(R.string.mask_enable))
+                box.addView(chipRow(listOf(getString(R.string.p_off), getString(R.string.p_on)), if (s.maskOn) 1 else 0) { i ->
+                    editor.update { it.maskOn = i == 1 }
+                    openPanel("mask")
+                })
+                if (s.maskOn) {
+                    box.addView(label(R.string.mask_mode))
+                    box.addView(chipRow(listOf(getString(R.string.mask_in), getString(R.string.mask_out)), s.maskMode) { i ->
+                        editor.update { it.maskMode = i }
+                    })
+                    box.addView(slider(R.string.mask_soft, 0, 100, s.maskSoft.roundToInt(), { "$it%" }) { v ->
+                        editor.update(false) { it.maskSoft = v.toFloat() }
+                    })
+                    box.addView(label(R.string.mask_hint))
+                    box.addView(resetChip { it.maskAx = 0.5f; it.maskAy = 0f; it.maskBx = 0.5f; it.maskBy = 1f })
+                }
+            }
+
+            "blend" -> if (s != null) {
+                box.addView(label(R.string.blend_hint))
+                val names = listOf(
+                    R.string.bl_normal, R.string.bl_multiply, R.string.bl_screen,
+                    R.string.bl_overlay, R.string.bl_darken, R.string.bl_lighten, R.string.bl_add
+                ).map { getString(it) }
+                box.addView(chipRow(names, s.blend.coerceIn(0, names.size - 1)) { i ->
+                    editor.update { it.blend = i }
                 })
             }
 

@@ -25,6 +25,8 @@ abstract class Layer {
     var rotation = 0f
     var scale = 1f
     var opacity = 255
+    /** How this layer mixes with the layers below (0 = normal). See BLEND_MODES. */
+    var blend = 0
 
     // perspective (percent, -80..80) and 3D rotation (degrees)
     var perspH = 0f
@@ -42,6 +44,34 @@ abstract class Layer {
     var reflectGap = 0f
     var reflectAlpha = 130 // 0..255
 
+    // ---- gradient mask: fades the layer out along a line between two points ----
+    var maskOn = false
+    var maskMode = 0       // 0 = keep near A / fade to B ; 1 = out (swapped)
+    var maskSoft = 60f     // 0..100, width of the fade band (0 = hard edge)
+    // the mask line, as fractions of the content box (0..1); default: top -> bottom
+    var maskAx = 0.5f
+    var maskAy = 0f
+    var maskBx = 0.5f
+    var maskBy = 1f
+
+    fun copyMaskFrom(o: Layer) {
+        maskOn = o.maskOn; maskMode = o.maskMode; maskSoft = o.maskSoft
+        maskAx = o.maskAx; maskAy = o.maskAy; maskBx = o.maskBx; maskBy = o.maskBy
+    }
+
+    companion object {
+        /** Blend modes shown to the user; index 0 is normal (no mixing). */
+        val BLEND_MODES = arrayOf(
+            null,                         // 0 normal
+            PorterDuff.Mode.MULTIPLY,     // 1
+            PorterDuff.Mode.SCREEN,       // 2
+            PorterDuff.Mode.OVERLAY,      // 3
+            PorterDuff.Mode.DARKEN,       // 4
+            PorterDuff.Mode.LIGHTEN,      // 5
+            PorterDuff.Mode.ADD           // 6
+        )
+    }
+
     // layers list
     var locked = false     // can't be moved or picked on the page
     var hidden = false     // not drawn, not saved in the picture
@@ -53,6 +83,8 @@ abstract class Layer {
     private val inv = Matrix()
     private val cam = Camera()
     private val fadePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val blendPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val maskPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     /** Measure the content and set cW / cH. */
     protected abstract fun prepare(fm: FontManager)
@@ -71,32 +103,43 @@ abstract class Layer {
     }
 
     protected fun copyBaseFrom(o: Layer) {
-        x = o.x; y = o.y; rotation = o.rotation; scale = o.scale; opacity = o.opacity
+        x = o.x; y = o.y; rotation = o.rotation; scale = o.scale; opacity = o.opacity; blend = o.blend
         perspH = o.perspH; perspV = o.perspV; rotX = o.rotX; rotY = o.rotY
         o.warp.copyInto(warp)
         reflectSize = o.reflectSize; reflectGap = o.reflectGap; reflectAlpha = o.reflectAlpha
         locked = o.locked; hidden = o.hidden
+        copyMaskFrom(o)
     }
 
     /** Place, size and shared effects, for saving a project. */
     fun putBase(j: org.json.JSONObject) {
         j.put("x", x.toDouble()); j.put("y", y.toDouble()); j.put("rotation", rotation.toDouble()); j.put("scale", scale.toDouble())
         j.put("opacity", opacity)
+        if (blend != 0) j.put("blend", blend)
         j.put("perspH", perspH.toDouble()); j.put("perspV", perspV.toDouble()); j.put("rotX", rotX.toDouble()); j.put("rotY", rotY.toDouble())
         if (hasWarp()) j.put("warp", org.json.JSONArray().apply { warp.forEach { put(it.toDouble()) } })
         j.put("reflectSize", reflectSize.toDouble()); j.put("reflectGap", reflectGap.toDouble()); j.put("reflectAlpha", reflectAlpha)
         j.put("locked", locked); j.put("hidden", hidden)
+        if (maskOn) {
+            j.put("maskOn", true); j.put("maskMode", maskMode); j.put("maskSoft", maskSoft.toDouble())
+            j.put("maskAx", maskAx.toDouble()); j.put("maskAy", maskAy.toDouble())
+            j.put("maskBx", maskBx.toDouble()); j.put("maskBy", maskBy.toDouble())
+        }
     }
 
     fun readBase(j: org.json.JSONObject) {
         fun f(k: String, d: Float) = j.optDouble(k, d.toDouble()).toFloat()
         x = f("x", 0f); y = f("y", 0f); rotation = f("rotation", 0f); scale = f("scale", 1f)
         opacity = j.optInt("opacity", 255)
+        blend = j.optInt("blend", 0)
         perspH = f("perspH", 0f); perspV = f("perspV", 0f); rotX = f("rotX", 0f); rotY = f("rotY", 0f)
         warp.fill(0f)
         j.optJSONArray("warp")?.let { a -> for (i in 0 until minOf(8, a.length())) warp[i] = a.optDouble(i, 0.0).toFloat() }
         reflectSize = f("reflectSize", 0f); reflectGap = f("reflectGap", 0f); reflectAlpha = j.optInt("reflectAlpha", 130)
         locked = j.optBoolean("locked", false); hidden = j.optBoolean("hidden", false)
+        maskOn = j.optBoolean("maskOn", false)
+        maskMode = j.optInt("maskMode", 0); maskSoft = f("maskSoft", 60f)
+        maskAx = f("maskAx", 0.5f); maskAy = f("maskAy", 0f); maskBx = f("maskBx", 0.5f); maskBy = f("maskBy", 1f)
     }
 
     /** Where the 4 box corners go (box centered on 0,0), from the sliders and, if [withWarp], the dragged corners. */
@@ -208,6 +251,12 @@ abstract class Layer {
     fun draw(canvas: Canvas, fm: FontManager) {
         prepare(fm)
         buildMatrix(m)
+        // blend: composite this whole layer onto the ones below with a mix mode
+        val mode = if (blend in 1 until BLEND_MODES.size) BLEND_MODES[blend] else null
+        val blendSave = if (mode != null) {
+            blendPaint.xfermode = PorterDuffXfermode(mode)
+            canvas.saveLayer(null, blendPaint)
+        } else -1
         canvas.save()
         canvas.concat(m)
         if (opacity < 255) canvas.saveLayerAlpha(null, opacity)
@@ -230,10 +279,63 @@ abstract class Layer {
             canvas.restoreToCount(sc)
         }
 
-        drawLocal(canvas, fm)
+        if (maskOn && maskUsable()) {
+            val sc = canvas.saveLayer(null, null)
+            drawLocal(canvas, fm)
+            applyMask(canvas)
+            canvas.restoreToCount(sc)
+        } else {
+            drawLocal(canvas, fm)
+        }
 
         if (opacity < 255) canvas.restore()
         canvas.restore()
+        if (blendSave >= 0) canvas.restoreToCount(blendSave)
+    }
+
+    private fun maskUsable(): Boolean {
+        val dx = (maskBx - maskAx) * cW
+        val dy = (maskBy - maskAy) * cH
+        return dx * dx + dy * dy > 1f
+    }
+
+    /** Fades the just-drawn content along the A->B line using a soft alpha gradient. */
+    private fun applyMask(canvas: Canvas) {
+        val ax = maskAx * cW; val ay = maskAy * cH
+        val bx = maskBx * cW; val by = maskBy * cH
+        val soft = (maskSoft / 100f).coerceIn(0f, 1f)
+        val half = (soft / 2f).coerceAtLeast(0.001f)
+        val mid = 0.5f
+        val p1 = (mid - half).coerceIn(0f, 0.999f)
+        val p2 = (mid + half).coerceIn(p1 + 0.001f, 1f)
+        val keep = Color.WHITE
+        val drop = Color.TRANSPARENT
+        val cA = if (maskMode == 0) keep else drop
+        val cB = if (maskMode == 0) drop else keep
+        maskPaint.shader = LinearGradient(
+            ax, ay, bx, by,
+            intArrayOf(cA, cA, cB, cB), floatArrayOf(0f, p1, p2, 1f), Shader.TileMode.CLAMP
+        )
+        maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+        canvas.drawRect(-cW * 2f, -cH * 2f, cW * 3f, cH * 3f, maskPaint)
+        maskPaint.shader = null
+    }
+
+    /** Page position of mask handle (which: 0 = A, 1 = B), written into out[0], out[1]. */
+    fun maskHandlePage(fm: FontManager, which: Int, out: FloatArray) {
+        prepare(fm); buildMatrix(m)
+        out[0] = (if (which == 0) maskAx else maskBx) * cW
+        out[1] = (if (which == 0) maskAy else maskBy) * cH
+        m.mapPoints(out)
+    }
+
+    /** Move a mask handle to a page point. */
+    fun setMaskHandleFromPage(fm: FontManager, which: Int, px: Float, py: Float) {
+        prepare(fm); buildMatrix(m)
+        if (!m.invert(inv)) return
+        val p = floatArrayOf(px, py); inv.mapPoints(p)
+        val fx = p[0] / cW; val fy = p[1] / cH
+        if (which == 0) { maskAx = fx; maskAy = fy } else { maskBx = fx; maskBy = fy }
     }
 
     /** Is the page point (px, py) on this layer? */
