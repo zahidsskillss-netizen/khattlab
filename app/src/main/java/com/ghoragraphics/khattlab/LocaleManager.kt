@@ -13,8 +13,8 @@ object LocaleManager {
     private const val KEY = "lang"
     const val DEFAULT = "en"
 
-    /** The 10 languages offered, in the order shown. */
-    val LANGUAGES = listOf("en", "ps", "fa", "ar", "ur", "tr", "hi", "es", "fr", "de")
+    /** The languages offered, in the order shown. */
+    val LANGUAGES = listOf("en", "ps", "fa", "ar", "ur", "hi")
 
     fun lang(c: Context): String =
         c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, DEFAULT) ?: DEFAULT
