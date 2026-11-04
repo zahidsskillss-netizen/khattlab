@@ -57,6 +57,7 @@ class BgRemoveActivity : Activity() {
     private var tool = TOOL_ERASE
     private var brush = 40
     private var tolerance = 40
+    private var fillColor = Color.WHITE
     private lateinit var bold: Typeface
     private lateinit var toolPanel: LinearLayout
 
@@ -69,6 +70,7 @@ class BgRemoveActivity : Activity() {
         const val TOOL_RESTORE = 1
         const val TOOL_MAGIC = 2
         const val TOOL_CROP = 3
+        const val TOOL_FILL = 4
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).roundToInt()
@@ -132,9 +134,9 @@ class BgRemoveActivity : Activity() {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val names = listOf(
             getString(R.string.bg_crop), getString(R.string.bg_auto), getString(R.string.bg_magic),
-            getString(R.string.bg_erase), getString(R.string.bg_restore)
+            getString(R.string.bg_erase), getString(R.string.bg_restore), getString(R.string.bg_fill)
         )
-        val sel = when (tool) { TOOL_CROP -> 0; TOOL_MAGIC -> 2; TOOL_ERASE -> 3; TOOL_RESTORE -> 4; else -> -1 }
+        val sel = when (tool) { TOOL_CROP -> 0; TOOL_MAGIC -> 2; TOOL_ERASE -> 3; TOOL_RESTORE -> 4; TOOL_FILL -> 5; else -> -1 }
         names.forEachIndexed { i, n ->
             row.addView(chip(n, i == sel) {
                 when (i) {
@@ -143,6 +145,7 @@ class BgRemoveActivity : Activity() {
                     2 -> tool = TOOL_MAGIC
                     3 -> tool = TOOL_ERASE
                     4 -> tool = TOOL_RESTORE
+                    5 -> tool = TOOL_FILL
                 }
                 buildPanel(panel)
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(6) })
@@ -153,6 +156,7 @@ class BgRemoveActivity : Activity() {
                 TOOL_CROP -> R.string.bg_hint_crop
                 TOOL_MAGIC -> R.string.bg_hint_magic
                 TOOL_RESTORE -> R.string.bg_hint_restore
+                TOOL_FILL -> R.string.bg_hint_fill
                 else -> R.string.bg_hint_erase
             })
             textSize = 12.5f; setTextColor(0xB3FFFFFF.toInt()); setPadding(0, dp(8), 0, dp(4))
@@ -170,11 +174,65 @@ class BgRemoveActivity : Activity() {
                 val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 lp.topMargin = dp(8); layoutParams = lp; gravity = Gravity.CENTER
             })
+        } else if (tool == TOOL_FILL) {
+            val crow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val cols = intArrayOf(0xFFFFFFFF.toInt(), 0xFF000000.toInt(), 0xFFE8B547.toInt(), 0xFFE53935.toInt(),
+                0xFF1E88E5.toInt(), 0xFF1B5E20.toInt(), 0xFF8E24AA.toInt(), 0xFFFF7043.toInt(), 0xFF00897B.toInt())
+            for (col in cols) {
+                crow.addView(View(this).apply {
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL; setColor(col)
+                        setStroke(dp(if (col == fillColor) 3 else 1), if (col == fillColor) gold else 0x55FFFFFF)
+                    }
+                    setOnClickListener { fillColor = col; buildPanel(panel) }
+                }, LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginEnd = dp(8) })
+            }
+            panel.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(crow) })
+            panel.addView(seek(R.string.bg_tolerance, 1, 120, tolerance) { tolerance = it })
         } else if (tool == TOOL_MAGIC) {
             panel.addView(seek(R.string.bg_tolerance, 1, 120, tolerance) { tolerance = it })
         } else {
             panel.addView(seek(R.string.bg_brush, 5, 150, brush) { brush = it })
         }
+    }
+
+    /** Paint bucket: flood the touched region (similar colours) with [fillColor]. */
+    private fun fillAt(px: Int, py: Int) {
+        if (px !in 0 until work.width || py !in 0 until work.height) return
+        if (busy.visibility == View.VISIBLE) return
+        busy.visibility = View.VISIBLE
+        remember()
+        val w = work.width; val h = work.height
+        val tol = tolerance; val src = work; val col = fillColor
+        Thread {
+            val px0 = IntArray(w * h)
+            src.getPixels(px0, 0, w, 0, 0, w, h)
+            val seed = px0[py * w + px]
+            val sa = Color.alpha(seed); val sr = Color.red(seed); val sg = Color.green(seed); val sb = Color.blue(seed)
+            val limit = tol * tol * 3
+            val seen = BooleanArray(w * h)
+            val stack = IntArray(w * h)
+            var top = 0
+            stack[top++] = py * w + px; seen[py * w + px] = true
+            var filled = 0
+            while (top > 0) {
+                val i = stack[--top]
+                val c = px0[i]
+                val dr = Color.red(c) - sr; val dg = Color.green(c) - sg; val db = Color.blue(c) - sb
+                val da = Color.alpha(c) - sa
+                if (dr * dr + dg * dg + db * db > limit || da * da > limit) continue
+                px0[i] = col; filled++
+                val x = i % w; val y = i / w
+                if (x > 0 && !seen[i - 1]) { seen[i - 1] = true; stack[top++] = i - 1 }
+                if (x < w - 1 && !seen[i + 1]) { seen[i + 1] = true; stack[top++] = i + 1 }
+                if (y > 0 && !seen[i - w]) { seen[i - w] = true; stack[top++] = i - w }
+                if (y < h - 1 && !seen[i + w]) { seen[i + w] = true; stack[top++] = i + w }
+            }
+            runOnUiThread {
+                busy.visibility = View.GONE
+                if (filled > 0 && src === work) { work.setPixels(px0, 0, w, 0, 0, w, h); view.invalidate() }
+            }
+        }.start()
     }
 
     private fun applyCrop() {
@@ -600,7 +658,7 @@ class BgRemoveActivity : Activity() {
             val t = (height - work.height * f) / 2f + panY
             canvas.drawRect(l, t, l + work.width * f, t + work.height * f, checker)
             canvas.drawBitmap(work, m, bmpPaint)
-            if (fingerX >= 0f && tool != TOOL_MAGIC && tool != TOOL_CROP) {
+            if (fingerX >= 0f && tool != TOOL_MAGIC && tool != TOOL_CROP && tool != TOOL_FILL) {
                 ring.strokeWidth = 1.5f * resources.displayMetrics.density
                 ring.color = if (tool == TOOL_ERASE) 0xFFFF5252.toInt() else 0xFF69F0AE.toInt()
                 canvas.drawCircle(fingerX, fingerY, brush * resources.displayMetrics.density / 2f, ring)
@@ -710,7 +768,7 @@ class BgRemoveActivity : Activity() {
                             lastX = e.x; lastY = e.y
                             invalidate()
                         }
-                    } else if (!twoFinger && tool != TOOL_MAGIC) {
+                    } else if (!twoFinger && tool != TOOL_MAGIC && tool != TOOL_FILL) {
                         if (!painting) {
                             if (abs(e.x - downX) + abs(e.y - downY) < 6f * resources.displayMetrics.density) return true
                             painting = true
@@ -728,11 +786,12 @@ class BgRemoveActivity : Activity() {
                 }
                 MotionEvent.ACTION_UP -> {
                     if (!twoFinger) {
-                        if (tool == TOOL_MAGIC) {
+                        if (tool == TOOL_MAGIC || tool == TOOL_FILL) {
                             if (!movedFar) {
                                 buildMatrix()
                                 val p = toBmp(e.x, e.y)
-                                magicAt(p[0].toInt(), p[1].toInt())
+                                if (tool == TOOL_FILL) fillAt(p[0].toInt(), p[1].toInt())
+                                else magicAt(p[0].toInt(), p[1].toInt())
                             }
                         } else if (!painting) {
                             // a tap paints one dot

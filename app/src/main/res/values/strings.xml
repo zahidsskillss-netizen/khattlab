@@ -455,4 +455,9 @@
     <string name="t_multi">څو انتخاب</string>
     <string name="multi_on">څو-ګونی انتخاب: پر توکو کېکاږئ چې وټاکل شي؛ بیا یې یوځای وخوځوئ</string>
     <string name="multi_empty">لومړی یو څه پر پاڼه کېږدئ</string>
+    <string name="t_knife">چاړه (Knife)</string>
+    <string name="knife_on">پر توکي یوه کرښه کش کړئ چې دوه ټوټې شي</string>
+    <string name="bg_fill">ډکول</string>
+    <string name="bg_hint_fill">یو رنګ وټاکئ، بیا پر هغه ساحه کېکاږئ چې ورته رنګ ونیسي</string>
+    <string name="t_smartfill">رنګ ډکول</string>
 </resources>

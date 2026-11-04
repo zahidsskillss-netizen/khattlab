@@ -353,6 +353,9 @@ class MainActivity : Activity(), EditorView.Listener {
         val arrange = listOf(
             toolButton("delete", R.drawable.ic_delete, R.string.t_delete) { editor.deleteSelected() },
             toolButton("copy", R.drawable.ic_content_copy, R.string.t_copy) { editor.duplicateSelected() },
+            toolButton("knife", R.drawable.ic_knife, R.string.t_knife) {
+                editor.knifeMode = true; toast(R.string.knife_on)
+            },
             toolButton("front", R.drawable.ic_flip_to_front, R.string.t_to_front) { editor.moveSelected(true) },
             toolButton("back", R.drawable.ic_flip_to_back, R.string.t_to_back) { editor.moveSelected(false) }
         )
@@ -406,6 +409,7 @@ class MainActivity : Activity(), EditorView.Listener {
                 toolButton("bgremove", R.drawable.ic_auto_fix, R.string.t_remove_bg) { openBgRemover() },
                 toolButton("crop", R.drawable.ic_crop, R.string.t_crop) { openBgRemover(BgRemoveActivity.TOOL_CROP) },
                 toolButton("eraser", R.drawable.ic_eraser, R.string.t_eraser) { openBgRemover(BgRemoveActivity.TOOL_ERASE) },
+                toolButton("fill", R.drawable.ic_format_color_fill, R.string.t_smartfill) { openBgRemover(BgRemoveActivity.TOOL_FILL) },
                 panelTool("filter", R.drawable.ic_tune, R.string.t_filter),
                 panelTool("paper", R.drawable.ic_page_curl, R.string.t_paper)
             ) + arrange + common + listOf(

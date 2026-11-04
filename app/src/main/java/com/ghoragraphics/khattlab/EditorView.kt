@@ -7,6 +7,8 @@ import android.graphics.Color
 import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.graphics.RectF
 import android.os.Build
 import android.util.AttributeSet
@@ -766,6 +768,11 @@ class EditorView @JvmOverloads constructor(
             return
         }
 
+        if (knifeMode) {
+            if (knifeOn) canvas.drawLine(knifeAx, knifeAy, knifeBx, knifeBy, knifePaint)
+            return
+        }
+
         if (multiMode) {
             // dashed box around every chosen layer plus one around them all
             val union = RectF()
@@ -1078,6 +1085,100 @@ class EditorView @JvmOverloads constructor(
         }
     }
 
+    // ---------- knife ----------
+    var knifeMode = false
+        set(v) { field = v; knifeOn = false; invalidate() }
+    private var knifeOn = false
+    private var knifeAx = 0f; private var knifeAy = 0f
+    private var knifeBx = 0f; private var knifeBy = 0f
+    private val knifePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFFF5252.toInt(); style = Paint.Style.STROKE; strokeWidth = 2f * density
+        pathEffect = DashPathEffect(floatArrayOf(10f * density, 6f * density), 0f)
+    }
+
+    private fun knifeTouch(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { knifeOn = true; knifeAx = e.x; knifeAy = e.y; knifeBx = e.x; knifeBy = e.y }
+            MotionEvent.ACTION_MOVE -> { knifeBx = e.x; knifeBy = e.y; invalidate() }
+            MotionEvent.ACTION_UP -> {
+                knifeOn = false
+                if (hypot(knifeBx - knifeAx, knifeBy - knifeAy) > touchSlop) {
+                    val target = selected
+                    if (target != null && !target.locked)
+                        knifeCut(target, toDocX(knifeAx), toDocY(knifeAy), toDocX(knifeBx), toDocY(knifeBy))
+                }
+                knifeMode = false
+            }
+        }
+        return true
+    }
+
+    /** Cuts any layer into two pieces along the line A→B (page coords). The pieces become pictures. */
+    private fun knifeCut(l: Layer, ax: Float, ay: Float, bx: Float, by: Float) {
+        try {
+            val bounds = l.pageBounds(fonts)
+            bounds.inset(-4f, -4f)
+            val w = bounds.width(); val h = bounds.height()
+            if (w < 2f || h < 2f) return
+            val k = min(1f, 1600f / max(w, h))
+            val bw = max(1, (w * k).roundToInt()); val bh = max(1, (h * k).roundToInt())
+            val full = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
+            val c = Canvas(full)
+            c.scale(k, k)
+            c.translate(-bounds.left, -bounds.top)
+            l.draw(c, fonts)
+            // line endpoints in bitmap space
+            val a0 = (ax - bounds.left) * k; val a1 = (ay - bounds.top) * k
+            val b0 = (bx - bounds.left) * k; val b1 = (by - bounds.top) * k
+            val p1 = maskedSide(full, a0, a1, b0, b1, 1f)
+            val p2 = maskedSide(full, a0, a1, b0, b1, -1f)
+            full.recycle()
+            if (p1 == null || p2 == null) return
+            // push the two pieces a little apart, perpendicular to the cut
+            var nx = -(b1 - a1); var ny = (b0 - a0)
+            val nl = hypot(nx, ny).coerceAtLeast(1f)
+            val gap = min(w, h) * 0.03f
+            nx = nx / nl * gap; ny = ny / nl * gap
+            val cx = bounds.centerX(); val cy = bounds.centerY()
+            val img1 = ImageLayer(p1, cx + nx, cy + ny).also { it.scale = 1f / k }
+            val img2 = ImageLayer(p2, cx - nx, cy - ny).also { it.scale = 1f / k }
+            val i = layers.indexOf(l)
+            if (i < 0) return
+            commit()
+            layers.removeAt(i)
+            layers.add(i, img1)
+            layers.add(i + 1, img2)
+            select(img2)
+            invalidate()
+        } catch (e: Throwable) {
+            // cutting failed (e.g. out of memory): leave the layer as it was
+        }
+    }
+
+    /** A copy of [src] with everything on the [sign] side of the line cleared away. */
+    private fun maskedSide(src: Bitmap, a0: Float, a1: Float, b0: Float, b1: Float, sign: Float): Bitmap? {
+        return try {
+            val out = src.copy(Bitmap.Config.ARGB_8888, true)
+            val c = Canvas(out)
+            // a big quad covering the side to remove
+            val dx = b0 - a0; val dy = b1 - a1
+            val len = hypot(dx, dy).coerceAtLeast(1f)
+            val ux = dx / len; val uy = dy / len
+            val big = (max(out.width, out.height) * 4f)
+            val ea0 = a0 - ux * big; val ea1 = a1 - uy * big
+            val eb0 = b0 + ux * big; val eb1 = b1 + uy * big
+            val nx = -uy * sign * big; val ny = ux * sign * big
+            val p = Path()
+            p.moveTo(ea0, ea1); p.lineTo(eb0, eb1)
+            p.lineTo(eb0 + nx, eb1 + ny); p.lineTo(ea0 + nx, ea1 + ny); p.close()
+            val clear = Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR) }
+            c.drawPath(p, clear)
+            out
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
     private var multiGrab = false
 
     private fun multiTouch(e: MotionEvent): Boolean {
@@ -1117,6 +1218,7 @@ class EditorView @JvmOverloads constructor(
             return true
         }
         if (gradientAim != null) return aimTouch(e)
+        if (knifeMode) return knifeTouch(e)
         if (multiMode) return multiTouch(e)
         drawing?.let { return drawTouch(it, e) }
         val adj = selected as? ShapeLayer
