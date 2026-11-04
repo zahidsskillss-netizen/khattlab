@@ -71,7 +71,7 @@ class MainActivity : Activity(), EditorView.Listener {
         )
 
         private val MAIN_PANELS = setOf("bgcolor", "canvas", "projects", "templates", "shapes", "stickers", "draw", "vector")
-        private val COMMON_PANELS = setOf("position", "relpos", "size", "opacity", "rotate", "persp", "rot3d", "reflect")
+        private val COMMON_PANELS = setOf("position", "relpos", "size", "opacity", "rotate", "persp", "rot3d", "reflect", "echo")
         private val TEXT_PANELS = COMMON_PANELS + setOf(
             "styles", "font", "style", "color", "texture", "curve", "background", "align", "spacing",
             "stroke", "shadow", "inner", "emboss", "bevel", "glow", "depth", "floor"
@@ -346,7 +346,8 @@ class MainActivity : Activity(), EditorView.Listener {
             panelTool("relpos", R.drawable.ic_align_horizontal_center, R.string.t_relpos),
             panelTool("size", R.drawable.ic_open_in_full, R.string.t_size),
             panelTool("opacity", R.drawable.ic_opacity, R.string.t_opacity),
-            panelTool("rotate", R.drawable.ic_rotate_right, R.string.t_rotate)
+            panelTool("rotate", R.drawable.ic_rotate_right, R.string.t_rotate),
+            panelTool("echo", R.drawable.ic_echo, R.string.t_echo)
         )
         val arrange = listOf(
             toolButton("delete", R.drawable.ic_delete, R.string.t_delete) { editor.deleteSelected() },
@@ -518,6 +519,7 @@ class MainActivity : Activity(), EditorView.Listener {
                         box.addView(slider(R.string.p_angle, 0, 359, sh.gradAngle.roundToInt(), { "$it°" }) { v ->
                             us(false) { it.gradAngle = v.toFloat() }
                         })
+                        box.addView(chipRow(listOf(getString(R.string.grad_aim))) { startGradientAim { a -> us(false) { it.gradAngle = a } } })
                     }
                 }
             }
@@ -700,6 +702,23 @@ class MainActivity : Activity(), EditorView.Listener {
                 })
             }
 
+            "echo" -> if (s != null) {
+                box.addView(label(R.string.echo_hint))
+                box.addView(slider(R.string.echo_count, 1, 20, echoCount, { "$it" }) { v -> echoCount = v })
+                box.addView(slider(R.string.echo_x, -40, 40, echoX, { "$it" }) { v -> echoX = v })
+                box.addView(slider(R.string.echo_y, -40, 40, echoY, { "$it" }) { v -> echoY = v })
+                box.addView(slider(R.string.echo_rot, -45, 45, echoRot, { "$it°" }) { v -> echoRot = v })
+                box.addView(slider(R.string.echo_scale, -20, 20, echoScale, { "$it%" }) { v -> echoScale = v })
+                box.addView(slider(R.string.echo_fade, 0, 40, echoFade, { "$it" }) { v -> echoFade = v })
+                box.addView(chipRow(listOf(getString(R.string.echo_make))) {
+                    val dw = editor.doc.width / 100f
+                    val dh = editor.doc.height / 100f
+                    editor.stepRepeat(echoCount, echoX * dw, echoY * dh, echoRot.toFloat(), echoScale.toFloat(), echoFade)
+                    closePanel()
+                    toast(R.string.echo_done)
+                })
+            }
+
             "rotate" -> if (s != null) {
                 box.addView(slider(R.string.p_rotation, -180, 180, s.rotation.roundToInt(), { "$it°" }) { v ->
                     editor.update(false) { it.rotation = v.toFloat() }
@@ -777,6 +796,7 @@ class MainActivity : Activity(), EditorView.Listener {
                     box.addView(slider(R.string.p_angle, 0, 359, t.gradAngle.roundToInt(), { "$it°" }) { v ->
                         ut(false) { it.gradAngle = v.toFloat() }
                     })
+                    box.addView(chipRow(listOf(getString(R.string.grad_aim))) { startGradientAim { a -> ut(false) { it.gradAngle = a } } })
                 } else {
                     box.addView(swatchRow(t.color, false) { c -> ut { it.color = c; it.fillMode = 0 } })
                 }
@@ -1520,6 +1540,24 @@ class MainActivity : Activity(), EditorView.Listener {
             row.addView(item, lp)
         }
         return scroll
+    }
+
+    // echo settings kept between opens
+    private var echoCount = 5
+    private var echoX = 6
+    private var echoY = 6
+    private var echoRot = 0
+    private var echoScale = 0
+    private var echoFade = 15
+
+    /** Let the user drag on the canvas to aim the gradient; the panel reopens when they lift. */
+    private fun startGradientAim(apply: (Float) -> Unit) {
+        val key = activeTool
+        panelHost.visibility = View.GONE
+        toast(R.string.grad_aim_hint)
+        editor.commit()
+        editor.gradientAim = { a -> apply(a) }
+        editor.onGradientAimEnd = { if (key != null) openPanel(key) else panelHost.visibility = View.VISIBLE }
     }
 
     // ================= eyedropper =================

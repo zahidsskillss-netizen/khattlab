@@ -440,4 +440,16 @@
     <string name="bg_hint_crop">څنډې یا کونجونه وخوځوئ؛ بیا «قطع کړه» کېکاږئ</string>
     <string name="bg_do_crop">✓ قطع کړه</string>
     <string name="bg_cropped">عکس قطع شو</string>
+    <string name="t_echo">تکرار (Echo)</string>
+    <string name="echo_hint">د ټاکل شوي توکي څو هوارې کاپۍ جوړوي چې یو له بل سره بدلیږي</string>
+    <string name="echo_count">شمېر</string>
+    <string name="echo_x">کیڼ/ښي قدم</string>
+    <string name="echo_y">پورته/ښکته قدم</string>
+    <string name="echo_rot">د څرخولو قدم</string>
+    <string name="echo_scale">د اندازې قدم</string>
+    <string name="echo_fade">کمرنګي قدم</string>
+    <string name="echo_make">✓ جوړ کړه</string>
+    <string name="echo_done">تکرار جوړ شو</string>
+    <string name="grad_aim">په پاڼه کې لوری ورکړئ</string>
+    <string name="grad_aim_hint">پر پاڼه په ګوته کش کړئ چې د ګرادینټ لوری وټاکئ</string>
 </resources>

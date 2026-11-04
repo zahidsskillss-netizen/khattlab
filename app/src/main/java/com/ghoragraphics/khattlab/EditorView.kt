@@ -935,6 +935,52 @@ class EditorView @JvmOverloads constructor(
     /** When set, the next tap samples the color at that point and calls this, then clears. */
     var colorPick: ((Int) -> Unit)? = null
 
+    /** While set, dragging on the canvas reports the gradient direction (degrees) live. */
+    var gradientAim: ((Float) -> Unit)? = null
+    var onGradientAimEnd: (() -> Unit)? = null
+    private var aimStartX = 0f
+    private var aimStartY = 0f
+
+    private fun aimTouch(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { aimStartX = e.x; aimStartY = e.y }
+            MotionEvent.ACTION_MOVE -> {
+                val dx = e.x - aimStartX
+                val dy = e.y - aimStartY
+                if (hypot(dx, dy) > 6f) {
+                    var a = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
+                    if (a < 0) a += 360f
+                    gradientAim?.invoke(a)
+                    invalidate()
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                gradientAim = null
+                onGradientAimEnd?.invoke()
+                onGradientAimEnd = null
+            }
+        }
+        return true
+    }
+
+    /** Makes [count] fading copies of the selected layer, each shifted/rotated/scaled a step further. */
+    fun stepRepeat(count: Int, dx: Float, dy: Float, dRot: Float, dScalePct: Float, dFade: Int) {
+        val s = selected ?: return
+        if (count < 1) return
+        commit()
+        val at = layers.indexOf(s)
+        for (i in 1..count) {
+            val c = s.copy()
+            c.x = s.x + dx * i
+            c.y = s.y + dy * i
+            c.rotation = s.rotation + dRot * i
+            c.scale = (s.scale * Math.pow((1 + dScalePct / 100.0), i.toDouble())).toFloat().coerceIn(0.02f, 40f)
+            c.opacity = (s.opacity - dFade * i).coerceIn(10, 255)
+            layers.add(at, c)   // copies go behind the original, forming a trail
+        }
+        invalidate()
+    }
+
     private fun sampleColor(vx: Float, vy: Float): Int {
         return try {
             val b = render()
@@ -955,6 +1001,7 @@ class EditorView @JvmOverloads constructor(
             }
             return true
         }
+        if (gradientAim != null) return aimTouch(e)
         drawing?.let { return drawTouch(it, e) }
         val adj = selected as? ShapeLayer
         if (imageAdjust && adj != null && adj.hasImage()) return imageTouch(adj, e)
