@@ -43,12 +43,9 @@ object Trial {
         return if (t > seen) { p.edit().putLong(K_SEEN, t).apply(); t } else seen
     }
 
-    fun expired(c: Context): Boolean = now(c) - start(c) >= DAYS * DAY_MS
+    // Full version: no time limit any more.
+    fun expired(c: Context): Boolean = false
 
-    /** Whole days still left (0 when it has ended). */
-    fun daysLeft(c: Context): Int {
-        val left = DAYS * DAY_MS - (now(c) - start(c))
-        if (left <= 0) return 0
-        return ((left + DAY_MS - 1) / DAY_MS).toInt()
-    }
+    /** Whole days still left (kept for older callers; the app no longer expires). */
+    fun daysLeft(c: Context): Int = Int.MAX_VALUE
 }

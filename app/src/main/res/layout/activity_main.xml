@@ -11,7 +11,8 @@
         android:id="@+id/top_bar"
         android:layout_width="match_parent"
         android:layout_height="60dp"
-        android:background="@color/bar"
+        android:background="@drawable/topbar_glass"
+        android:elevation="6dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="14dp"
@@ -99,23 +100,20 @@
             android:visibility="gone" />
     </FrameLayout>
 
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="@color/divider" />
-
     <FrameLayout
         android:id="@+id/panel_host"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/panel"
+        android:background="@drawable/glass_panel"
+        android:elevation="12dp"
+        android:paddingTop="4dp"
         android:visibility="gone" />
 
     <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/tools"
-        android:elevation="4dp"
+        android:background="@drawable/glass_panel"
+        android:elevation="10dp"
         android:scrollbars="none">
 
         <LinearLayout

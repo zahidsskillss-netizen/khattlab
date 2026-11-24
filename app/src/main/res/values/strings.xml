@@ -271,6 +271,8 @@
     <string name="tg_ghora">Ghora Graphics Production Telegram</string>
     <string name="ab_feedback_t">Feedback &amp; suggestions</string>
     <string name="ab_test_text">This is a trial version of NawakhtGar. The full, official version will be published on the Play Store soon; we will share the link on our Telegram channel.</string>
+    <string name="ab_full_t">Full version</string>
+    <string name="ab_full_text">NawakhtGar is free with no time limit. The official Play Store version is coming soon; we will share the link on our Telegram channel.</string>
     <string name="bz_mode">Pen mode</string>
     <string name="bz_add">Add points</string>
     <string name="bz_curve">Curve</string>

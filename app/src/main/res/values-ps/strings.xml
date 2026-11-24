@@ -271,6 +271,8 @@
     <string name="tg_ghora">غوره ګرافیکس پروډکشن ټلګرام</string>
     <string name="ab_feedback_t">نظر او وړاندیز</string>
     <string name="ab_test_text">دا د نوښتګر ازمېښتي نسخه ده او لس ورځې کار کوي. اصلي او رسمي نسخه به ډېر ژر په Play Store کې خپره شي؛ لینک به یې زموږ په ټلګرام چینل کې درکړو.</string>
+    <string name="ab_full_t">بشپړه نسخه</string>
+    <string name="ab_full_text">نوښتګر وړیا دی او هیڅ وخت محدودیت نه لري. رسمي نسخه به ډېر ژر په Play Store کې راشي؛ لینک به یې زموږ په ټلګرام چینل کې درکړو.</string>
     <string name="bz_mode">د بېزیر حالت</string>
     <string name="bz_add">ټکي زیاتول</string>
     <string name="bz_curve">کږول</string>

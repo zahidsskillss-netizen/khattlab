@@ -114,11 +114,12 @@ class MainActivity : Activity(), EditorView.Listener {
     private var currentName = ""
     private var dirty = false
     private val gold = 0xFFE8B547.toInt()
-    private val accent = 0xFFC8901A.toInt()      // active tool on the light bars
-    private val textMain = 0xFF202124.toInt()
-    private val textDim = 0xFF5F6368.toInt()
-    private val chipBg = 0xFFE6E6EB.toInt()
-    private val line = 0x22000000
+    private val accent = 0xFFE8B547.toInt()      // active tool / accent on the dark glass bars
+    private val textMain = 0xFFF1F2F6.toInt()
+    private val textDim = 0x99FFFFFF.toInt()
+    private val chipBg = 0x1AFFFFFF.toInt()
+    private val line = 0x33FFFFFF
+    private val trackBg = 0x33FFFFFF
     private lateinit var uiFont: Typeface
     private lateinit var layersBox: LinearLayout
 
@@ -295,6 +296,14 @@ class MainActivity : Activity(), EditorView.Listener {
         setStroke(dp(1), strokeColor)
     }
 
+    /** Frosted-glass highlight behind the active tool tab. */
+    private fun tabGlass() = GradientDrawable().apply {
+        cornerRadius = dp(14).toFloat()
+        colors = intArrayOf(0x33E8B547, 0x14E8B547)
+        orientation = GradientDrawable.Orientation.TOP_BOTTOM
+        setStroke(dp(1), 0x59E8B547)
+    }
+
     /** Change the selected text (does nothing when a picture is selected). */
     private fun ut(commit: Boolean = true, block: (TextLayer) -> Unit) =
         editor.update(commit) { if (it is TextLayer) block(it) }
@@ -316,15 +325,15 @@ class MainActivity : Activity(), EditorView.Listener {
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            minimumWidth = dp(78)
-            setPadding(dp(6), dp(10), dp(6), dp(8))
-            background = ripple()
+            minimumWidth = dp(76)
+            setPadding(dp(6), dp(9), dp(6), dp(8))
+            background = if (active) tabGlass() else ripple()
             isClickable = true
             isFocusable = true
         }
         val g = ImageView(this).apply {
             setImageResource(icon)
-            imageTintList = ColorStateList.valueOf(if (active) accent else 0xFF5F6368.toInt())
+            imageTintList = ColorStateList.valueOf(if (active) accent else 0xCCFFFFFF.toInt())
         }
         val l = TextView(this).apply {
             setText(labelRes)
@@ -1456,7 +1465,7 @@ class MainActivity : Activity(), EditorView.Listener {
             progress = value.coerceIn(min, max) - min
             progressTintList = ColorStateList.valueOf(gold)
             thumbTintList = ColorStateList.valueOf(accent)
-            progressBackgroundTintList = ColorStateList.valueOf(0xFFBDBDC4.toInt())
+            progressBackgroundTintList = ColorStateList.valueOf(trackBg)
             minimumHeight = dp(40)
         }
         bar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {

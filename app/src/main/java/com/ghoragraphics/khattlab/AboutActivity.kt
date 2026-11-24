@@ -77,9 +77,9 @@ class AboutActivity : Activity() {
         feats.forEachIndexed { i, r -> app.addView(bullet(pashtoNum(i + 1), getString(r))) }
         root.addView(app)
 
-        // ---- test version ----
-        val test = card("⏳", getString(R.string.trial_left, Trial.daysLeft(this)))
-        test.addView(para(getString(R.string.ab_test_text)))
+        // ---- full version ----
+        val test = card("✨", getString(R.string.ab_full_t))
+        test.addView(para(getString(R.string.ab_full_text)))
         root.addView(test)
 
         // ---- feedback + contact: Telegram only ----

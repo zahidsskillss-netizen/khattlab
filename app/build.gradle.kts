@@ -11,8 +11,8 @@ android {
         applicationId = "com.ghoragraphics.nawakhtgar"
         minSdk = 24
         targetSdk = 34
-        versionCode = 29
-        versionName = "4.5"
+        versionCode = 30
+        versionName = "4.6"
         // 64-bit phones only: one copy of the AI library keeps the APK small enough to download in one go
         ndk { abiFilters += listOf("arm64-v8a") }
     }
